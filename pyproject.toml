@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "penq-pennylane"
+version = "1.0.0"
+description = "Small PennyLane backend for PenQ research workflows"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PennyLane>=0.0.0"]
+
+[project.entry-points."pennylane.plugins"]
+"penq.qml_starter" = "QML.PenQ:QMLStarterDevice"
+"penq.mps_starter" = "QML.PenQ:QMLMPSDevice"
+
+[tool.setuptools]
+include-package-data = false
+packages = ["QML.PenQ", "QML.PenQ.examples", "QML.PenQ.tests"]
+
+[tool.setuptools.package-dir]
+"QML.PenQ" = "."
+"QML.PenQ.examples" = "examples"
+"QML.PenQ.tests" = "tests"
+
+[tool.setuptools.package-data]
+"QML.PenQ" = ["pyproject.toml"]
