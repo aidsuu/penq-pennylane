@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1
+
+- Added an explicit `LICENSE` file to the public repository.
+- Refreshed the GitHub PyPI publishing workflow for current GitHub Actions runtime guidance.
+- Kept runtime backend capability unchanged.
+
 ## v1.0.0
 
 - First public release of `penq` as a dual-backend PennyLane research pack.
