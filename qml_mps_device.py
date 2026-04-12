@@ -18,9 +18,23 @@ class QMLMPSDevice(QubitDevice):
     name = "QML MPS Starter Device"
     short_name = "penq.mps_starter"
     pennylane_requires = ">=0.0.0"
-    version = "6.0.0"
+    version = "8.0.0"
     author = "Aidsuu"
-    operations = {"PauliX", "PauliY", "PauliZ", "Hadamard", "RX", "RY", "RZ", "CNOT"}
+    operations = {
+        "PauliX",
+        "PauliY",
+        "PauliZ",
+        "Hadamard",
+        "RX",
+        "RY",
+        "RZ",
+        "CNOT",
+        "CZ",
+        "PauliRot",
+        "IsingZZ",
+        "IsingXX",
+        "IsingYY",
+    }
     observables = {"PauliX", "PauliY", "PauliZ"}
     _MAX_WIRES = 30
 
@@ -115,14 +129,33 @@ class QMLMPSDevice(QubitDevice):
 
     def _apply_operation_to_mps(self, mps, operation):
         name = operation.name
-        if name == "CNOT":
+        if name == "PauliRot":
+            if len(operation.wires) == 1:
+                matrix = self._single_qubit_paulirot_matrix(operation)
+                wire = self._wire_index(operation.wires[0])
+                self._apply_single_qubit_gate(mps, matrix, wire)
+                return
             if len(operation.wires) != 2:
-                raise DeviceError("Unsupported operation: CNOT requires exactly two wires.")
-            control = self._wire_index(operation.wires[0])
-            target = self._wire_index(operation.wires[1])
-            if control == target:
-                raise DeviceError("Unsupported operation: CNOT requires two distinct wires.")
-            self._apply_cnot_with_routing(mps, control, target)
+                raise DeviceError(
+                    "Unsupported operation: PauliRot is supported only on one wire or two wires."
+                )
+            wire0 = self._wire_index(operation.wires[0])
+            wire1 = self._wire_index(operation.wires[1])
+            if wire0 == wire1:
+                raise DeviceError("Unsupported operation: PauliRot requires distinct wires.")
+            gate_matrix = self._two_qubit_matrix(operation)
+            self._apply_two_qubit_gate_with_routing(mps, gate_matrix, wire0, wire1)
+            return
+
+        if name in {"CNOT", "CZ", "IsingZZ", "IsingXX", "IsingYY"}:
+            if len(operation.wires) != 2:
+                raise DeviceError(f"Unsupported operation: {name} requires exactly two wires.")
+            wire0 = self._wire_index(operation.wires[0])
+            wire1 = self._wire_index(operation.wires[1])
+            if wire0 == wire1:
+                raise DeviceError(f"Unsupported operation: {name} requires two distinct wires.")
+            gate_matrix = self._two_qubit_matrix(operation)
+            self._apply_two_qubit_gate_with_routing(mps, gate_matrix, wire0, wire1)
             return
 
         if len(operation.wires) != 1:
@@ -158,26 +191,34 @@ class QMLMPSDevice(QubitDevice):
         mps[left_wire] = u_matrix.reshape(left_bond, 2, bond_dim)
         mps[left_wire + 1] = (singular_values[:, None] * vh_matrix).reshape(bond_dim, 2, right_bond)
 
-    def _apply_cnot_with_routing(self, mps, control, target):
-        if control < target:
-            routed_target = target
-            while routed_target > control + 1:
-                self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_target - 1)
-                routed_target -= 1
-            self._apply_two_qubit_gate(mps, self._cnot_matrix(), control)
-            while routed_target < target:
-                self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_target)
-                routed_target += 1
+    def _apply_two_qubit_gate_with_routing(self, mps, gate_matrix, wire0, wire1):
+        if abs(wire0 - wire1) == 1:
+            if wire0 < wire1:
+                self._apply_two_qubit_gate(mps, gate_matrix, wire0)
+            else:
+                self._apply_two_qubit_gate(mps, self._reversed_two_qubit_matrix(gate_matrix), wire1)
             return
 
-        routed_control = control
-        while routed_control > target + 1:
-            self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_control - 1)
-            routed_control -= 1
-        self._apply_two_qubit_gate(mps, self._reverse_cnot_matrix(), target)
-        while routed_control < control:
-            self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_control)
-            routed_control += 1
+        if wire0 < wire1:
+            routed_wire = wire1
+            while routed_wire > wire0 + 1:
+                self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_wire - 1)
+                routed_wire -= 1
+            self._apply_two_qubit_gate(mps, gate_matrix, wire0)
+            while routed_wire < wire1:
+                self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_wire)
+                routed_wire += 1
+            return
+
+        routed_wire = wire0
+        reversed_gate = self._reversed_two_qubit_matrix(gate_matrix)
+        while routed_wire > wire1 + 1:
+            self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_wire - 1)
+            routed_wire -= 1
+        self._apply_two_qubit_gate(mps, reversed_gate, wire1)
+        while routed_wire < wire0:
+            self._apply_two_qubit_gate(mps, self._swap_matrix(), routed_wire)
+            routed_wire += 1
 
     def _truncated_bond_dim(self, singular_values):
         if singular_values.size == 0:
@@ -260,8 +301,84 @@ class QMLMPSDevice(QubitDevice):
                 dtype=np.complex128,
             )
         raise DeviceError(
-            f"Unsupported operation: {name}. Supported gates are PauliX, PauliY, PauliZ, Hadamard, RX, RY, RZ, and CNOT."
+            f"Unsupported operation: {name}. Supported gates are PauliX, PauliY, PauliZ, Hadamard, RX, RY, RZ, CNOT, CZ, PauliRot with up to two non-identity local factors, and IsingZZ/IsingXX/IsingYY."
         )
+
+    @classmethod
+    def _two_qubit_matrix(cls, operation):
+        name = operation.name
+        if name == "CNOT":
+            return cls._cnot_matrix()
+        if name == "CZ":
+            return cls._cz_matrix()
+        if name == "IsingZZ":
+            return cls._ising_matrix(float(operation.parameters[0]), cls._pauli_matrix("PauliZ"))
+        if name == "IsingXX":
+            return cls._ising_matrix(float(operation.parameters[0]), cls._pauli_matrix("PauliX"))
+        if name == "IsingYY":
+            return cls._ising_matrix(float(operation.parameters[0]), cls._pauli_matrix("PauliY"))
+        if name == "PauliRot":
+            return cls._paulirot_matrix(operation)
+        raise DeviceError(
+            f"Unsupported operation: {name}. Supported two-qubit gates are CNOT, CZ, PauliRot with up to two non-identity local factors, and IsingZZ/IsingXX/IsingYY."
+        )
+
+    @classmethod
+    def _paulirot_matrix(cls, operation):
+        theta = float(operation.parameters[0])
+        pauli_word = operation.hyperparameters.get("pauli_word", "")
+        if len(pauli_word) != len(operation.wires):
+            raise DeviceError(
+                "Unsupported operation: PauliRot requires one Pauli character per wire."
+            )
+
+        active_count = 0
+        for letter in pauli_word:
+            if letter not in {"I", "X", "Y", "Z"}:
+                raise DeviceError(
+                    "Unsupported operation: PauliRot supports only Pauli words built from I, X, Y, and Z."
+                )
+            if letter != "I":
+                active_count += 1
+
+        if active_count > 2:
+            raise DeviceError(
+                "Unsupported operation: PauliRot is supported only when at most two wires carry non-identity Pauli factors."
+            )
+
+        left = cls._pauli_letter_matrix(pauli_word[0])
+        right = cls._pauli_letter_matrix(pauli_word[1])
+        generator = np.kron(left, right)
+        identity = np.eye(4, dtype=np.complex128)
+        return np.cos(theta / 2.0) * identity - 1j * np.sin(theta / 2.0) * generator
+
+    @classmethod
+    def _single_qubit_paulirot_matrix(cls, operation):
+        theta = float(operation.parameters[0])
+        pauli_word = operation.hyperparameters.get("pauli_word", "")
+        if len(pauli_word) != 1 or pauli_word not in {"I", "X", "Y", "Z"}:
+            raise DeviceError(
+                "Unsupported operation: single-wire PauliRot supports only I, X, Y, or Z."
+            )
+        generator = cls._pauli_letter_matrix(pauli_word)
+        identity = np.eye(2, dtype=np.complex128)
+        return np.cos(theta / 2.0) * identity - 1j * np.sin(theta / 2.0) * generator
+
+    @classmethod
+    def _ising_matrix(cls, theta, pauli_matrix):
+        generator = np.kron(pauli_matrix, pauli_matrix)
+        identity = np.eye(4, dtype=np.complex128)
+        return np.cos(theta / 2.0) * identity - 1j * np.sin(theta / 2.0) * generator
+
+    @classmethod
+    def _pauli_matrix(cls, name):
+        return cls._single_qubit_observable_matrix(name)
+
+    @classmethod
+    def _pauli_letter_matrix(cls, letter):
+        if letter == "I":
+            return np.eye(2, dtype=np.complex128)
+        return cls._pauli_matrix(f"Pauli{letter}")
 
     @staticmethod
     def _cnot_matrix():
@@ -276,16 +393,25 @@ class QMLMPSDevice(QubitDevice):
         )
 
     @staticmethod
-    def _reverse_cnot_matrix():
+    def _cz_matrix():
         return np.array(
             [
                 [1, 0, 0, 0],
-                [0, 0, 0, 1],
-                [0, 0, 1, 0],
                 [0, 1, 0, 0],
+                [0, 0, 1, 0],
+                [0, 0, 0, -1],
             ],
             dtype=np.complex128,
         )
+
+    @classmethod
+    def _reverse_cnot_matrix(cls):
+        return cls._reversed_two_qubit_matrix(cls._cnot_matrix())
+
+    @classmethod
+    def _reversed_two_qubit_matrix(cls, gate_matrix):
+        swap = cls._swap_matrix()
+        return swap @ gate_matrix @ swap
 
     @staticmethod
     def _swap_matrix():

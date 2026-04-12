@@ -56,6 +56,9 @@ try:
     from QML.PenQ.examples.tfim_mps_threshold_report import build_tfim_mps_threshold_report
     from QML.PenQ.examples.tfim_mps_threshold_report import write_tfim_mps_threshold_csv
     from QML.PenQ.examples.mps_general_pauli_demo import general_pauli_demo_rows
+    from QML.PenQ.examples.mps_paulirot_demo import paulirot_demo_rows
+    from QML.PenQ.examples.mps_isingzz_quench import mps_isingzz_quench_rows
+    from QML.PenQ.examples.mps_isingzz_quench import write_mps_isingzz_quench_csv
     from QML.PenQ.examples.mps_tebd_tfim_quench import mps_tebd_tfim_rows
     from QML.PenQ.examples.mps_tebd_tfim_quench import write_mps_tebd_tfim_csv
     from QML.PenQ.examples.mps_trotter_order_study import mps_trotter_order_rows
@@ -131,6 +134,9 @@ except ImportError:  # pragma: no cover - dependency is external to this repo
     build_tfim_mps_threshold_report = None
     write_tfim_mps_threshold_csv = None
     general_pauli_demo_rows = None
+    paulirot_demo_rows = None
+    mps_isingzz_quench_rows = None
+    write_mps_isingzz_quench_csv = None
     mps_tebd_tfim_rows = None
     write_mps_tebd_tfim_csv = None
     mps_trotter_order_rows = None
@@ -1521,6 +1527,65 @@ class TestExamples(unittest.TestCase):
             if "final_value" in stage:
                 self.assertGreaterEqual(stage["final_value"], -1.0)
                 self.assertLessEqual(stage["final_value"], 1.0)
+
+    def test_mps_paulirot_demo_rows_have_expected_structure(self):
+        rows = paulirot_demo_rows()
+        self.assertEqual([row["case"] for row in rows], ["CZ_state_overlap", "PauliRot_XY", "IsingYY"])
+        for row in rows:
+            self.assertEqual(set(row), {"case", "mps_value", "reference_value", "abs_error"})
+            self.assertGreaterEqual(row["abs_error"], 0.0)
+
+    def test_mps_isingzz_quench_rows_have_expected_structure(self):
+        rows = mps_isingzz_quench_rows(
+            qubit_counts=(8,),
+            h_values=(0.25,),
+            dt=0.1,
+            steps=2,
+            max_bond_dim=4,
+            svd_cutoff=1e-12,
+        )
+        self.assertEqual(
+            [(row["n"], row["step"]) for row in rows],
+            [(8, 0), (8, 1), (8, 2)],
+        )
+        for row in rows:
+            self.assertEqual(
+                set(row),
+                {
+                    "n",
+                    "h",
+                    "dt",
+                    "step",
+                    "time",
+                    "max_bond_dim",
+                    "svd_cutoff",
+                    "expval_z0",
+                    "expval_z0z1",
+                },
+            )
+            self.assertGreaterEqual(row["expval_z0"], -1.0)
+            self.assertLessEqual(row["expval_z0"], 1.0)
+            self.assertGreaterEqual(row["expval_z0z1"], -1.0)
+            self.assertLessEqual(row["expval_z0z1"], 1.0)
+
+    def test_mps_isingzz_quench_csv_has_expected_header(self):
+        rows = mps_isingzz_quench_rows(
+            qubit_counts=(8,),
+            h_values=(0.25,),
+            dt=0.1,
+            steps=1,
+            max_bond_dim=4,
+            svd_cutoff=1e-12,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "mps_isingzz_quench.csv"
+            write_mps_isingzz_quench_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "n,h,dt,step,time,max_bond_dim,svd_cutoff,expval_z0,expval_z0z1",
+        )
+        self.assertEqual(len(lines), 3)
 
 
 if __name__ == "__main__":

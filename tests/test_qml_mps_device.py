@@ -207,6 +207,95 @@ class TestQMLMPSDevice(unittest.TestCase):
 
         np.testing.assert_allclose(mps_circuit(), statevector_circuit(), atol=1e-8)
 
+    def test_cz_gate_matches_expected_state(self):
+        mps_dev = QMLMPSDevice(wires=2, max_bond_dim=4, svd_cutoff=1e-12)
+
+        @qml.qnode(mps_dev)
+        def mps_circuit():
+            qml.Hadamard(0)
+            qml.Hadamard(1)
+            qml.CZ(wires=[0, 1])
+            return qml.state()
+
+        expected = np.array([0.5, 0.5, 0.5, -0.5], dtype=np.complex128)
+        np.testing.assert_allclose(mps_circuit(), expected, atol=1e-8)
+
+    def test_paulirot_single_wire_matches_qml_starter(self):
+        mps_dev = QMLMPSDevice(wires=2, max_bond_dim=4, svd_cutoff=1e-12)
+        statevector_dev = QMLStarterDevice(wires=2)
+
+        @qml.qnode(mps_dev)
+        def mps_circuit():
+            qml.PauliRot(0.37, "Y", wires=[1])
+            return qml.expval(qml.PauliZ(1))
+
+        @qml.qnode(statevector_dev)
+        def statevector_circuit():
+            qml.PauliRot(0.37, "Y", wires=[1])
+            return qml.expval(qml.PauliZ(1))
+
+        self.assertAlmostEqual(mps_circuit(), statevector_circuit(), places=8)
+
+    def test_paulirot_two_wire_matches_qml_starter(self):
+        mps_dev = QMLMPSDevice(wires=3, max_bond_dim=4, svd_cutoff=1e-12)
+        statevector_dev = QMLStarterDevice(wires=3)
+
+        observable = qml.PauliX(0) @ qml.PauliY(1) @ qml.PauliZ(2)
+
+        @qml.qnode(mps_dev)
+        def mps_circuit():
+            qml.Hadamard(0)
+            qml.PauliRot(0.41, "XY", wires=[0, 2])
+            qml.CZ(wires=[2, 1])
+            return qml.expval(observable)
+
+        @qml.qnode(statevector_dev)
+        def statevector_circuit():
+            qml.Hadamard(0)
+            qml.PauliRot(0.41, "XY", wires=[0, 2])
+            qml.CZ(wires=[2, 1])
+            return qml.expval(observable)
+
+        self.assertAlmostEqual(mps_circuit(), statevector_circuit(), places=8)
+
+    def test_isingzz_matches_qml_starter(self):
+        mps_dev = QMLMPSDevice(wires=3, max_bond_dim=4, svd_cutoff=1e-12)
+        statevector_dev = QMLStarterDevice(wires=3)
+
+        @qml.qnode(mps_dev)
+        def mps_circuit():
+            qml.Hadamard(1)
+            qml.IsingZZ(0.23, wires=[1, 2])
+            return qml.expval(qml.PauliZ(1) @ qml.PauliZ(2))
+
+        @qml.qnode(statevector_dev)
+        def statevector_circuit():
+            qml.Hadamard(1)
+            qml.IsingZZ(0.23, wires=[1, 2])
+            return qml.expval(qml.PauliZ(1) @ qml.PauliZ(2))
+
+        self.assertAlmostEqual(mps_circuit(), statevector_circuit(), places=8)
+
+    def test_truncation_path_remains_stable_for_new_two_qubit_gates(self):
+        full_dev = QMLMPSDevice(wires=2, max_bond_dim=None, svd_cutoff=0.0)
+        truncated_dev = QMLMPSDevice(wires=2, max_bond_dim=2, svd_cutoff=1e-12)
+
+        @qml.qnode(full_dev)
+        def full_circuit():
+            qml.Hadamard(0)
+            qml.IsingXX(0.31, wires=[0, 1])
+            qml.CZ(wires=[0, 1])
+            return qml.state()
+
+        @qml.qnode(truncated_dev)
+        def truncated_circuit():
+            qml.Hadamard(0)
+            qml.IsingXX(0.31, wires=[0, 1])
+            qml.CZ(wires=[0, 1])
+            return qml.state()
+
+        np.testing.assert_allclose(truncated_circuit(), full_circuit(), atol=1e-8)
+
 
 class TestPenQMPSPackagingMetadata(unittest.TestCase):
     def test_pyproject_declares_mps_plugin_entry_point(self):
