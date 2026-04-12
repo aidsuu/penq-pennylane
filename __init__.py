@@ -1,3 +1,5 @@
+__version__ = "1.1.0"
+
 from .qml_starter_device import QMLStarterDevice
 from .qml_mps_device import QMLMPSDevice
 from .penq_algorithms import adaptive_tfim_vqe

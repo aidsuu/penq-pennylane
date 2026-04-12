@@ -6,16 +6,16 @@
 
 ## Project Status
 
-Public release: `1.0.0`
+Public release: `1.1.0`
 
-The `1.0.0` public release keeps both runtime devices frozen and packages the current stable research layer:
+The current public package release keeps the public plugin names stable while the internal runtime milestone for this work is `v8.1`:
 - a stable analytic statevector backend with the public device name `penq.qml_starter`
-- a minimal analytic MPS backend with the public device name `penq.mps_starter`
+- an analytic MPS backend with the public device name `penq.mps_starter`
 - a compact set of deterministic research workflows, scans, comparisons, and CSV-producing analysis helpers
 
 ## Research Pack Status
 
-- runtime device scope is frozen at the current analytic-only capability
+- both runtime devices remain analytic-only
 - no new runtime dependency is required beyond PennyLane
 - examples are deterministic and intended for reproducible small and medium-scale studies
 - CSV-producing workflows now form a stable analysis layer on top of the backend
@@ -25,6 +25,8 @@ The `1.0.0` public release keeps both runtime devices frozen and packages the cu
 - a cross-campaign comparative report layer is available for compact combined analysis
 - a large-scale TFIM campaign is available for larger deterministic full-statevector batch runs
 - practical scale is still bounded by full-statevector memory
+- `penq.mps_starter` now has a wider local two-qubit runtime subset than the original public release
+- the repository now includes an official adaptive TFIM variational solver with CSV-ready and plot-ready workflows
 
 ## Backend And Runtime
 
@@ -67,6 +69,11 @@ The `1.0.0` public release keeps both runtime devices frozen and packages the cu
   - `RY`
   - `RZ`
   - `CNOT` including internally routed non-nearest-neighbor cases
+  - `CZ`
+  - `PauliRot` on supported one-wire and two-wire Pauli words
+  - `IsingZZ`
+  - `IsingXX`
+  - `IsingYY`
 - supported measurements:
   - `qml.state()`
   - `qml.expval(qml.PauliX(wire))`
@@ -88,11 +95,32 @@ Expectation values are evaluated directly from the MPS representation.
 
 ## MPS Routed Two-Qubit Gates
 
-`penq.mps_starter` now supports non-nearest-neighbor `CNOT` through an explicit internal routing strategy.
+`penq.mps_starter` now supports a generic adjacent two-qubit update path plus explicit routing for non-nearest-neighbor cases.
 
-- nearest-neighbor `CNOT` still uses the direct adjacent two-site update
-- non-nearest-neighbor `CNOT` is routed internally with adjacent `SWAP` steps and then restored
+- adjacent updates contract two tensors, apply a local `4x4` unitary, and split back with SVD
+- the split path respects `max_bond_dim` and `svd_cutoff`
+- non-nearest-neighbor two-qubit gates are routed internally with adjacent `SWAP` steps and then restored
 - this widens the usable circuit class without exposing `SWAP` as a new public gate
+
+## MPS General Two-Qubit Gates
+
+`penq.mps_starter` now includes a generic nearest-neighbor two-qubit gate engine for local `4x4` unitaries.
+
+- no dense global statevector is built during the update path
+- the local engine is reused by adjacent `CNOT`, `CZ`, `IsingZZ`, `IsingXX`, `IsingYY`, and supported two-wire `PauliRot`
+- routed non-nearest-neighbor two-qubit gates reuse the same local engine after explicit `SWAP` routing
+
+## Native PauliRot / Ising Support
+
+`penq.mps_starter` now supports additional native runtime operations relevant to PennyLane workflows.
+
+- `qml.CZ`
+- `qml.PauliRot` for one-wire and two-wire Pauli words with at most two non-identity local factors
+- `qml.IsingZZ`
+- `qml.IsingXX`
+- `qml.IsingYY`
+
+Operations outside this subset still fail explicitly.
 
 ## MPS Time Evolution
 
@@ -209,6 +237,11 @@ The repository also includes a deterministic QAOA truncation study for `penq.mps
 - `RY`
 - `RZ`
 - `CNOT`
+- `CZ`
+- `PauliRot` for supported one-wire and two-wire Pauli words
+- `IsingZZ`
+- `IsingXX`
+- `IsingYY`
 
 ### Supported Measurements
 
@@ -325,6 +358,91 @@ The repository includes deterministic performance utilities separate from the ru
 
 The repository also acts as a deterministic workflow pack for small and medium-scale studies.
 
+## Adaptive Variational TFIM Solver
+
+The repository now includes an official adaptive TFIM variational solver exposed through:
+
+- `QML.PenQ.penq_algorithms.adaptive_tfim_vqe`
+- `QML.PenQ.penq_algorithms.compare_tfim_vqe_exact_vs_mps`
+
+The solver is deterministic and portable across:
+
+- `penq.qml_starter`
+- `penq.mps_starter`
+
+The physical model is the open-chain TFIM Hamiltonian
+
+- `H = -J * sum_i Z_i Z_{i+1} - h * sum_i X_i`
+
+The adaptive ansatz uses only gates that are portable across both public backends:
+
+- initial `Hadamard` preparation
+- portable nearest-neighbor ZZ blocks implemented as `CNOT-RZ-CNOT`
+- global `RX` mixer rotations
+
+Layer growth is explicit and deterministic:
+
+- start from a shallow base circuit
+- add one new `(gamma, beta)` layer at a time
+- search each new layer with a deterministic grid
+- stop when energy improvement falls below tolerance or `max_layers` is reached
+
+## Adaptive TFIM VQE: Mathematical Formulation
+
+This solver uses explicit TFIM formulas in both code and report docs.
+
+- Hamiltonian:
+  - `H = -J sum_i Z_i Z_{i+1} - h sum_i X_i`
+- Objective:
+  - `E(theta) = <psi(theta)|H|psi(theta)>`
+- Per-layer variational block:
+  - `U_l(gamma_l, beta_l) = U_X(beta_l) U_ZZ(gamma_l)`
+- Full `L`-layer state:
+  - `|psi_L> = prod_l U_l |+>^n`
+- Adaptive improvement after adding one layer:
+  - `Delta_L = E_{L-1}^* - E_L^*`
+- Stop rule:
+  - `Delta_L <= tol or L == max_layers`
+
+Portable ZZ block identity used on both public backends:
+
+- `CNOT - RZ(2 gamma) - CNOT = exp(-i gamma Z⊗Z)`
+
+The current adaptive solver keeps backend portability by building `U_ZZ` from supported `CNOT` and `RZ` gates rather than relying on backend-specific circuit transforms.
+
+## Scientific Plotting and Reports
+
+The repository now includes a report layer for the adaptive TFIM VQE workflows.
+
+- plotting uses Matplotlib only inside the report script
+- `SciencePlots` is used only if available
+- when `SciencePlots` is unavailable, the report falls back to a clean Matplotlib style
+- plotting is optional and not required for importing or using the runtime devices
+
+## Mandatory Plot Outputs
+
+Adaptive TFIM report plots always save both output formats for each figure stem:
+
+- PNG at `300 dpi`
+- PDF
+
+For example, the stem `adaptive_tfim_energy_vs_layer` always produces:
+
+- `adaptive_tfim_energy_vs_layer.png`
+- `adaptive_tfim_energy_vs_layer.pdf`
+
+The plotting helper validates that both files exist after save. Missing PNG or PDF output raises an explicit runtime error.
+
+## Optional SciencePlots Without Runtime Dependency
+
+SciencePlots is optional and never required for importing runtime devices or solver code.
+
+- `matplotlib` and `SciencePlots` live in optional plotting extras
+- report scripts check explicitly whether `scienceplots` is installed
+- if available, the report uses `plt.style.use(["science", "ieee"])`
+- if unavailable, the report uses an explicit Matplotlib fallback style
+- normal plotting control flow uses explicit validation instead of `try/except`-driven style selection
+
 ### Workflow Index
 
 | Example File | Class | Purpose | Output |
@@ -343,6 +461,9 @@ The repository also acts as a deterministic workflow pack for small and medium-s
 | `examples/tfim_ansatz_cost_quality.py` | Exact-only | TFIM ansatz cost-versus-quality study with parameter counts | Terminal + CSV |
 | `examples/tfim_ansatz_depth_study.py` | Exact-only | TFIM depth comparison across baseline, depth-1, and depth-2 ansatz families | Terminal + CSV |
 | `examples/tfim_grid_resolution_study.py` | Exact-only | TFIM grid-resolution study for entangling ansatz families | Terminal + CSV |
+| `examples/adaptive_tfim_vqe_demo.py` | Exact-vs-MPS comparative | Deterministic adaptive TFIM VQE demo on the exact and MPS backends | Terminal |
+| `examples/adaptive_tfim_vqe_scan.py` | Exact-vs-MPS comparative | Adaptive TFIM VQE layer-by-layer scan with CSV-ready history rows | Terminal + CSV |
+| `examples/adaptive_tfim_vqe_report.py` | Exact-vs-MPS comparative | Scientific report and plot generator for adaptive TFIM VQE scan CSVs | Terminal + PNG/PDF + CSV |
 | `examples/tfim_research_campaign.py` | Exact-only | TFIM campaign runner that writes multiple CSV analysis artifacts in one directory | Terminal + multiple CSV |
 | `examples/tfim_campaign_summary.py` | Exact-only | Summary reader for campaign outputs with optional aggregated CSV | Terminal + CSV |
 | `examples/tfim_large_scale_campaign.py` | Exact-only | Larger-system deterministic TFIM campaign for batch full-statevector scans | Terminal + CSV |
@@ -353,6 +474,8 @@ The repository also acts as a deterministic workflow pack for small and medium-s
 | `examples/qaoa_chain_landscape.py` | Exact-only | Medium-scale p=1 QAOA chain landscape scan | Terminal + CSV |
 | `examples/mps_basic_demo.py` | MPS-only | Minimal loader and Bell-state demo for the MPS backend | Terminal |
 | `examples/mps_general_pauli_demo.py` | Exact-vs-MPS comparative | General Pauli-word and routed-CNOT demo comparing the MPS backend against the exact backend on a small circuit | Terminal |
+| `examples/mps_paulirot_demo.py` | Exact-vs-MPS comparative | Small demo for native `CZ`, `PauliRot`, and Ising-gate agreement between the MPS and exact backends | Terminal |
+| `examples/mps_isingzz_quench.py` | MPS-only | Deterministic native `IsingZZ` quench workflow with CSV-ready observable output | Terminal + CSV |
 | `examples/mps_tebd_tfim_quench.py` | MPS-only | Deterministic TFIM time evolution using a TEBD-like Trotter split with CSV output for dynamics analysis | Terminal + CSV |
 | `examples/mps_trotter_order_study.py` | MPS-only | Deterministic comparison between first-order and second-order TFIM Trotterization at fixed total time | Terminal + CSV |
 | `examples/mps_vs_statevector_tfim_quench.py` | Exact-vs-MPS comparative | Deterministic exact-vs-MPS validation for TFIM quench observables across Trotter order, `dt`, and bond dimension | Terminal + CSV |
@@ -388,6 +511,9 @@ The repository also acts as a deterministic workflow pack for small and medium-s
 - `tfim_ansatz_cost_quality.py`
 - `tfim_ansatz_depth_study.py`
 - `tfim_grid_resolution_study.py`
+- `adaptive_tfim_vqe_demo.py`
+- `adaptive_tfim_vqe_scan.py`
+- `adaptive_tfim_vqe_report.py`
 
 #### QAOA Studies
 
@@ -466,7 +592,6 @@ The following CSV outputs are considered stable at the `v3.0` documentation free
 - no gradient support
 - no optimizer stack beyond deterministic scans and grid searches
 - no observables outside the supported Pauli-word subset
-- no 2-qubit gate beyond `CNOT`
 - large wire counts remain RAM-limited because the backend stores the full statevector
 
 ## Install
@@ -483,6 +608,12 @@ Install the package in editable mode:
 
 ```bash
 python -m pip install -e . --no-build-isolation
+```
+
+Install optional plotting support for report scripts:
+
+```bash
+python -m pip install -e .[plots] --no-build-isolation
 ```
 
 `--no-build-isolation` is useful when the environment does not have network access and `pip` would otherwise try to fetch build dependencies again.
@@ -503,7 +634,10 @@ python -m pip install -e . --no-build-isolation
 .venv/bin/python examples/tfim_large_scale_campaign.py
 .venv/bin/python examples/tfim_exact_large_campaign.py
 .venv/bin/python examples/mps_basic_demo.py
+.venv/bin/python examples/mps_paulirot_demo.py
 .venv/bin/python examples/mps_truncation_demo.py
+.venv/bin/python examples/mps_isingzz_quench.py --csv mps_isingzz_quench.csv
+.venv/bin/python examples/adaptive_tfim_vqe_demo.py
 .venv/bin/python examples/mps_tebd_tfim_quench.py --csv mps_tebd_tfim_quench.csv
 .venv/bin/python examples/mps_trotter_order_study.py --csv mps_trotter_order_study.csv
 .venv/bin/python examples/mps_vs_statevector_tfim_quench.py --csv mps_vs_statevector_tfim_quench.csv
@@ -539,6 +673,8 @@ python -m pip install -e . --no-build-isolation
 .venv/bin/python examples/tfim_ansatz_cost_quality.py --csv tfim_ansatz_cost_quality.csv
 .venv/bin/python examples/tfim_ansatz_depth_study.py --csv tfim_ansatz_depth.csv
 .venv/bin/python examples/tfim_grid_resolution_study.py --csv tfim_grid_resolution.csv
+.venv/bin/python examples/adaptive_tfim_vqe_scan.py --csv adaptive_tfim_vqe_scan.csv
+.venv/bin/python examples/adaptive_tfim_vqe_report.py --scan-csv adaptive_tfim_vqe_scan.csv --output-dir adaptive_tfim_report --csv adaptive_tfim_report.csv
 .venv/bin/python examples/qaoa_chain_landscape.py --csv qaoa_landscape.csv
 .venv/bin/python examples/tfim_research_campaign.py --output-dir tfim_research_campaign
 .venv/bin/python examples/tfim_campaign_summary.py --input-dir tfim_research_campaign --csv tfim_campaign_summary.csv
@@ -583,3 +719,11 @@ python -m pip install -e . --no-build-isolation
 - `v3.2`: TFIM campaign summary layer
 - `v3.3`: QAOA campaign and summary layers
 - `v3.4`: comparative report layer across campaigns
+- `v3.5`: larger-system deterministic TFIM batch studies
+- `v4.0`: minimal tensor-network backend `penq.mps_starter` with pure-NumPy updates
+- `v4.1`: runtime truncation controls `max_bond_dim` and `svd_cutoff` for the MPS backend
+- `v5.0`: documentation freeze as a dual-backend research pack
+- `v6.0`: extended MPS device with arbitrary Pauli expectations and routed CNOT
+- `v7.0`: expanded MPS native 2-qubit gates (`CZ`, `PauliRot`, `IsingZZ`/`XX`/`YY`)
+- `v8.0`: adaptive TFIM VQE solver and deterministic scanning workflows
+- `v8.1`: robust plotting/reporting standard guaranteeing PNG and PDF output pairs

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0
+
+### v8.1
+
+- Documented the adaptive TFIM VQE formulas explicitly in `penq_algorithms.py` and the README, including the TFIM Hamiltonian, objective, layer unitary, adaptive improvement, stop rule, and the `CNOT-RZ(2 gamma)-CNOT` ZZ identity.
+- Added one mandatory plotting save path that always writes both PNG and PDF outputs and raises explicit errors if either file is missing after save.
+- Kept plotting optional and outside runtime-core dependencies.
+- Added focused tests for adaptive TFIM formula documentation, mandatory PNG/PDF output pairs, and explicit report failure on missing plot outputs.
+
+### v8.0
+
+- Added `penq_algorithms.py` with the official deterministic adaptive TFIM variational solver `adaptive_tfim_vqe(...)`.
+- Added `compare_tfim_vqe_exact_vs_mps(...)` for small exact-vs-MPS solver agreement checks.
+- Kept the public device names unchanged: `penq.qml_starter` and `penq.mps_starter`.
+- Kept `penq.qml_starter` unchanged at runtime.
+- Added `examples/adaptive_tfim_vqe_demo.py`, `examples/adaptive_tfim_vqe_scan.py`, and `examples/adaptive_tfim_vqe_report.py`.
+- Added CSV-ready adaptive solver scan rows and optional exact-vs-MPS comparison CSV output in the report layer.
+- Added optional plotting support via Matplotlib and SciencePlots as non-core package extras.
+- Added tests for adaptive solver result shape, monotonic layer history, exact-vs-MPS agreement, CSV schema, and optional report generation.
+
+### v7.0
+
+- Expanded `penq.mps_starter` with a generic nearest-neighbor two-qubit gate engine based on local `4x4` unitary application plus SVD splitting under `max_bond_dim` and `svd_cutoff`.
+- Kept `penq.qml_starter` unchanged.
+- Added routed two-qubit support in `penq.mps_starter` for `CZ`, supported one-wire and two-wire `PauliRot`, and `IsingZZ`/`IsingXX`/`IsingYY`.
+- Kept the existing MPS Pauli-word expectation path unchanged in semantics.
+- Added runtime tests for `CZ`, `PauliRot`, `IsingZZ`, exact-vs-MPS agreement on small circuits, and truncation stability on the widened two-qubit path.
+- Added `examples/mps_paulirot_demo.py` and `examples/mps_isingzz_quench.py`.
+
 ## v1.0.1
 
 - Added an explicit `LICENSE` file to the public repository.
