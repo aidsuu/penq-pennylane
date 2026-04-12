@@ -59,6 +59,9 @@ try:
     from QML.PenQ.examples.mps_paulirot_demo import paulirot_demo_rows
     from QML.PenQ.examples.mps_isingzz_quench import mps_isingzz_quench_rows
     from QML.PenQ.examples.mps_isingzz_quench import write_mps_isingzz_quench_csv
+    from QML.PenQ.examples.adaptive_tfim_vqe_demo import demo_rows as adaptive_tfim_demo_rows
+    from QML.PenQ.examples.adaptive_tfim_vqe_scan import adaptive_tfim_vqe_scan_rows
+    from QML.PenQ.examples.adaptive_tfim_vqe_scan import write_adaptive_tfim_vqe_scan_csv
     from QML.PenQ.examples.mps_tebd_tfim_quench import mps_tebd_tfim_rows
     from QML.PenQ.examples.mps_tebd_tfim_quench import write_mps_tebd_tfim_csv
     from QML.PenQ.examples.mps_trotter_order_study import mps_trotter_order_rows
@@ -137,6 +140,9 @@ except ImportError:  # pragma: no cover - dependency is external to this repo
     paulirot_demo_rows = None
     mps_isingzz_quench_rows = None
     write_mps_isingzz_quench_csv = None
+    adaptive_tfim_demo_rows = None
+    adaptive_tfim_vqe_scan_rows = None
+    write_adaptive_tfim_vqe_scan_csv = None
     mps_tebd_tfim_rows = None
     write_mps_tebd_tfim_csv = None
     mps_trotter_order_rows = None
@@ -1586,6 +1592,63 @@ class TestExamples(unittest.TestCase):
             "n,h,dt,step,time,max_bond_dim,svd_cutoff,expval_z0,expval_z0z1",
         )
         self.assertEqual(len(lines), 3)
+
+    def test_adaptive_tfim_vqe_demo_has_expected_structure(self):
+        rows = adaptive_tfim_demo_rows()
+        self.assertEqual(set(rows), {"exact", "mps", "comparison"})
+        self.assertIn("energy", rows["exact"])
+        self.assertIn("energy", rows["mps"])
+        self.assertIn("abs_energy_error", rows["comparison"])
+
+    def test_adaptive_tfim_vqe_scan_rows_have_expected_structure(self):
+        rows = adaptive_tfim_vqe_scan_rows(
+            qubit_counts=(6,),
+            J_values=(1.0,),
+            h_values=(0.5,),
+            include_exact=True,
+            mps_bond_dims=(2,),
+            max_layers=2,
+            steps=1,
+        )
+        self.assertEqual(
+            set(rows[0]),
+            {
+                "n",
+                "J",
+                "h",
+                "backend",
+                "layer",
+                "energy",
+                "energy_per_site",
+                "expval_x0",
+                "expval_z0z1",
+                "converged",
+                "final_delta_energy",
+                "max_bond_dim",
+                "svd_cutoff",
+            },
+        )
+        self.assertEqual({row["backend"] for row in rows}, {"qml", "mps"})
+
+    def test_adaptive_tfim_vqe_scan_csv_has_expected_header(self):
+        rows = adaptive_tfim_vqe_scan_rows(
+            qubit_counts=(6,),
+            J_values=(1.0,),
+            h_values=(0.5,),
+            include_exact=True,
+            mps_bond_dims=(2,),
+            max_layers=1,
+            steps=1,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "adaptive_tfim_vqe_scan.csv"
+            write_adaptive_tfim_vqe_scan_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "n,J,h,backend,layer,energy,energy_per_site,expval_x0,expval_z0z1,converged,final_delta_energy,max_bond_dim,svd_cutoff",
+        )
+        self.assertGreaterEqual(len(lines), 3)
 
 
 if __name__ == "__main__":
