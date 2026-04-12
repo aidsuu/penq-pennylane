@@ -2,12 +2,15 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from importlib.util import find_spec
 
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+matplotlib = None if find_spec("matplotlib") is None else True
 
 try:
     from QML.PenQ.examples.hamiltonian_scan import analytic_basis_energy, scan_basis_energies
@@ -62,6 +65,8 @@ try:
     from QML.PenQ.examples.adaptive_tfim_vqe_demo import demo_rows as adaptive_tfim_demo_rows
     from QML.PenQ.examples.adaptive_tfim_vqe_scan import adaptive_tfim_vqe_scan_rows
     from QML.PenQ.examples.adaptive_tfim_vqe_scan import write_adaptive_tfim_vqe_scan_csv
+    from QML.PenQ.examples.adaptive_tfim_vqe_report import generate_adaptive_tfim_report
+    from QML.PenQ.examples.adaptive_tfim_vqe_report import write_adaptive_tfim_report_csv
     from QML.PenQ.examples.mps_tebd_tfim_quench import mps_tebd_tfim_rows
     from QML.PenQ.examples.mps_tebd_tfim_quench import write_mps_tebd_tfim_csv
     from QML.PenQ.examples.mps_trotter_order_study import mps_trotter_order_rows
@@ -143,6 +148,8 @@ except ImportError:  # pragma: no cover - dependency is external to this repo
     adaptive_tfim_demo_rows = None
     adaptive_tfim_vqe_scan_rows = None
     write_adaptive_tfim_vqe_scan_csv = None
+    generate_adaptive_tfim_report = None
+    write_adaptive_tfim_report_csv = None
     mps_tebd_tfim_rows = None
     write_mps_tebd_tfim_csv = None
     mps_trotter_order_rows = None
@@ -1649,6 +1656,30 @@ class TestExamples(unittest.TestCase):
             "n,J,h,backend,layer,energy,energy_per_site,expval_x0,expval_z0z1,converged,final_delta_energy,max_bond_dim,svd_cutoff",
         )
         self.assertGreaterEqual(len(lines), 3)
+
+    @unittest.skipIf(matplotlib is None, "matplotlib is not installed")
+    def test_adaptive_tfim_report_generates_plot_files(self):
+        rows = adaptive_tfim_vqe_scan_rows(
+            qubit_counts=(6,),
+            J_values=(1.0,),
+            h_values=(0.5,),
+            include_exact=True,
+            mps_bond_dims=(2, 4),
+            max_layers=2,
+            steps=1,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            csv_path = pathlib.Path(tempdir) / "adaptive_tfim_vqe_scan.csv"
+            output_dir = pathlib.Path(tempdir) / "report"
+            report_csv = pathlib.Path(tempdir) / "adaptive_tfim_report.csv"
+            write_adaptive_tfim_vqe_scan_csv(csv_path, rows)
+            report = generate_adaptive_tfim_report(csv_path, output_dir)
+            write_adaptive_tfim_report_csv(report_csv, report["comparison_rows"])
+            self.assertTrue((output_dir / "adaptive_tfim_energy_vs_layer.png").exists())
+            self.assertTrue((output_dir / "adaptive_tfim_energy_vs_layer.pdf").exists())
+            self.assertTrue((output_dir / "adaptive_tfim_exact_vs_mps.png").exists())
+            self.assertTrue((output_dir / "adaptive_tfim_exact_vs_mps.pdf").exists())
+            self.assertTrue(report_csv.exists())
 
 
 if __name__ == "__main__":
