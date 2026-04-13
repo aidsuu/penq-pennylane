@@ -410,6 +410,61 @@ Portable ZZ block identity used on both public backends:
 
 The current adaptive solver keeps backend portability by building `U_ZZ` from supported `CNOT` and `RZ` gates rather than relying on backend-specific circuit transforms.
 
+## Variational Imaginary-Time TFIM Solver
+
+Added in `v9.0`, PenQ now includes a deterministic Variational Imaginary-Time Evolution (VITE) style solver: `imaginary_time_tfim`.
+
+Instead of adding layers adaptively, this solver optimizes a fixed-depth ansatz with iterative imaginary-time-inspired updates.
+
+- Theoretical target:
+  - `|psi(tau)> = exp(-tau H)|psi0> / ||exp(-tau H)|psi0>||`
+- Discrete variational step update for parameters `theta`:
+  - `theta_{k+1} = theta_k - delta_tau * grad_E(theta_k)`
+- Current approximation used in implementation:
+  - identity/diagonal variational metric (`A ~= I`) rather than solving a full dense McLachlan linear system each step
+- Gradients `grad_E` are evaluated exactly via a macroscopic parameter-shift rule without relying on backpropagation.
+- Energy monotonicity is structurally targeted: the update minimizes energy at each step proportional to `delta_tau`.
+
+Portable ZZ and X blocks identical to the adaptive approach are used, ensuring perfect compatibility with the strict runtime constraints of `penq.mps_starter`.
+
+## Real-Time TFIM Evolution Solver
+
+Added in `v10.0`, PenQ now also includes deterministic real-time TFIM evolution through `real_time_tfim`.
+
+- Continuous target dynamics:
+  - `|psi(t)> = exp(-i H t)|psi0>`
+- Hamiltonian:
+  - `H = -J sum_i Z_i Z_{i+1} - h sum_i X_i`
+- Current implementation:
+  - first-order Trotterized step updates with portable `ZZ` and `X` blocks that are supported on both `penq.qml_starter` and `penq.mps_starter`
+
+The solver returns trajectory histories for:
+
+- energy
+- `expval_x0`
+- `expval_z0z1`
+
+as well as the explicit time grid used during evolution.
+
+## TFIM Dynamics Reports
+
+Imaginary-time and real-time TFIM workflows now share one consistent scan CSV schema for dynamics histories:
+
+- `dynamics,n,J,h,backend,step,time,step_size,energy,energy_per_site,expval_x0,expval_z0z1,max_bond_dim,svd_cutoff`
+
+The two report workflows both enforce mandatory PNG and PDF outputs per figure stem.
+
+- Imaginary-time report stems:
+  - `imaginary_tfim_energy_vs_step`
+  - `imaginary_tfim_exact_vs_mps`
+  - `imaginary_tfim_error_vs_max_bond_dim`
+- Real-time report stems:
+  - `real_tfim_energy_vs_time`
+  - `real_tfim_observables_vs_time`
+  - `real_tfim_exact_vs_mps`
+
+An additional optional summary report can aggregate final exact-vs-MPS errors across both dynamics modes.
+
 ## Scientific Plotting and Reports
 
 The repository now includes a report layer for the adaptive TFIM VQE workflows.
@@ -464,6 +519,13 @@ SciencePlots is optional and never required for importing runtime devices or sol
 | `examples/adaptive_tfim_vqe_demo.py` | Exact-vs-MPS comparative | Deterministic adaptive TFIM VQE demo on the exact and MPS backends | Terminal |
 | `examples/adaptive_tfim_vqe_scan.py` | Exact-vs-MPS comparative | Adaptive TFIM VQE layer-by-layer scan with CSV-ready history rows | Terminal + CSV |
 | `examples/adaptive_tfim_vqe_report.py` | Exact-vs-MPS comparative | Scientific report and plot generator for adaptive TFIM VQE scan CSVs | Terminal + PNG/PDF + CSV |
+| `examples/imaginary_time_tfim_demo.py` | Exact-vs-MPS comparative | Deterministic variational imaginary-time TFIM demo on exact and MPS backends | Terminal |
+| `examples/imaginary_time_tfim_scan.py` | Exact-vs-MPS comparative | Imaginary-time TFIM dynamics scan with unified CSV schema | Terminal + CSV |
+| `examples/imaginary_time_tfim_report.py` | Exact-vs-MPS comparative | Imaginary-time TFIM report with mandatory PNG/PDF artifact pairs | Terminal + PNG/PDF + CSV |
+| `examples/real_time_tfim_demo.py` | Exact-vs-MPS comparative | Deterministic real-time TFIM evolution demo on exact and MPS backends | Terminal |
+| `examples/real_time_tfim_scan.py` | Exact-vs-MPS comparative | Real-time TFIM dynamics scan with unified CSV schema | Terminal + CSV |
+| `examples/real_time_tfim_report.py` | Exact-vs-MPS comparative | Real-time TFIM dynamics report with energy and observable trajectories | Terminal + PNG/PDF + CSV |
+| `examples/tfim_dynamics_comparison_report.py` | Exact-vs-MPS comparative | Optional summary of final exact-vs-MPS errors across imaginary-time and real-time workflows | Terminal + PNG/PDF |
 | `examples/tfim_research_campaign.py` | Exact-only | TFIM campaign runner that writes multiple CSV analysis artifacts in one directory | Terminal + multiple CSV |
 | `examples/tfim_campaign_summary.py` | Exact-only | Summary reader for campaign outputs with optional aggregated CSV | Terminal + CSV |
 | `examples/tfim_large_scale_campaign.py` | Exact-only | Larger-system deterministic TFIM campaign for batch full-statevector scans | Terminal + CSV |

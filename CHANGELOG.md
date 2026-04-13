@@ -2,6 +2,25 @@
 
 ## 1.1.0
 
+### v10.0
+
+- Added deterministic real-time TFIM solver `real_time_tfim(...)` and exact-vs-MPS comparator `compare_real_time_exact_vs_mps(...)`.
+- Added real-time workflows `real_time_tfim_demo.py`, `real_time_tfim_scan.py`, and `real_time_tfim_report.py` with mandatory PNG/PDF report outputs.
+- Refactored TFIM dynamics scan CSV handling into shared utilities with a common schema for imaginary-time and real-time workflows.
+- Updated imaginary-time scan/report to use explicit scan CSV outputs and the centralized plotting helpers.
+- Added optional cross-dynamics summary report `tfim_dynamics_comparison_report.py` for final exact-vs-MPS error comparisons.
+- Added focused tests for real-time result shapes, trajectory stability, exact-vs-MPS agreement, scan CSV schema, and mandatory report artifact outputs.
+- Documented the solver approximations explicitly: imaginary-time uses a simplified identity-metric variational update, while real-time uses deterministic first-order Trotterized evolution.
+
+### v9.0
+
+- Added `imaginary_time_tfim(...)` officially implementing Variational Imaginary-Time Evolution (VITE) for the TFIM Hamiltonian.
+- Added `compare_imag_time_exact_vs_mps(...)` helper function for VITE validation.
+- Kept public devices (`penq.qml_starter`, `penq.mps_starter`) functionally identical.
+- Implemented parameter-shift derivatives with deterministic imaginary-time-style parameter updates under a diagonal/identity metric approximation.
+- Added examples `imaginary_time_tfim_demo.py`, `imaginary_time_tfim_scan.py`, and `imaginary_time_tfim_report.py`.
+- Formally documented mathematical models including the $|\psi(\tau)\rangle = \exp(-\tau H)|\psi(0)\rangle$ projection in the README.
+
 ### v8.1
 
 - Documented the adaptive TFIM VQE formulas explicitly in `penq_algorithms.py` and the README, including the TFIM Hamiltonian, objective, layer unitary, adaptive improvement, stop rule, and the `CNOT-RZ(2 gamma)-CNOT` ZZ identity.

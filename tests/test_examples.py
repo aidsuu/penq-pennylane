@@ -67,6 +67,9 @@ try:
     from QML.PenQ.examples.adaptive_tfim_vqe_scan import write_adaptive_tfim_vqe_scan_csv
     from QML.PenQ.examples.adaptive_tfim_vqe_report import generate_adaptive_tfim_report
     from QML.PenQ.examples.adaptive_tfim_vqe_report import write_adaptive_tfim_report_csv
+    from QML.PenQ.examples.imaginary_time_tfim_scan import imaginary_time_tfim_scan_rows
+    from QML.PenQ.examples.real_time_tfim_scan import real_time_tfim_scan_rows
+    from QML.PenQ.examples.tfim_dynamics_utils import write_tfim_dynamics_scan_csv
     from QML.PenQ.examples.mps_tebd_tfim_quench import mps_tebd_tfim_rows
     from QML.PenQ.examples.mps_tebd_tfim_quench import write_mps_tebd_tfim_csv
     from QML.PenQ.examples.mps_trotter_order_study import mps_trotter_order_rows
@@ -150,6 +153,9 @@ except ImportError:  # pragma: no cover - dependency is external to this repo
     write_adaptive_tfim_vqe_scan_csv = None
     generate_adaptive_tfim_report = None
     write_adaptive_tfim_report_csv = None
+    imaginary_time_tfim_scan_rows = None
+    real_time_tfim_scan_rows = None
+    write_tfim_dynamics_scan_csv = None
     mps_tebd_tfim_rows = None
     write_mps_tebd_tfim_csv = None
     mps_trotter_order_rows = None
@@ -1680,6 +1686,158 @@ class TestExamples(unittest.TestCase):
             self.assertTrue((output_dir / "adaptive_tfim_exact_vs_mps.png").exists())
             self.assertTrue((output_dir / "adaptive_tfim_exact_vs_mps.pdf").exists())
             self.assertTrue(report_csv.exists())
+
+    @unittest.skipIf(matplotlib is None, "matplotlib is not installed")
+    def test_imaginary_time_report_generates_plot_files(self):
+        import subprocess
+        import os
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_base = pathlib.Path(__file__).resolve().parents[1]
+            script_path = repo_base / "examples" / "imaginary_time_tfim_report.py"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{str(ROOT)}:" + env.get("PYTHONPATH", "")
+            subprocess.run([sys.executable, str(script_path)], cwd=tempdir, env=env, check=True)
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_report.csv").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_energy_vs_step.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_energy_vs_step.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_exact_vs_mps.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_exact_vs_mps.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_error_vs_max_bond_dim.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "imaginary_tfim_error_vs_max_bond_dim.pdf").exists())
+
+    def test_imaginary_time_scan_csv_has_expected_header(self):
+        rows = imaginary_time_tfim_scan_rows(
+            qubit_counts=(4,),
+            J_values=(1.0,),
+            h_values=(0.5,),
+            include_exact=True,
+            mps_bond_dims=(4,),
+            delta_tau=0.02,
+            steps=2,
+            max_layers=2,
+            svd_cutoff=1e-12,
+            seed=123,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "imaginary_tfim_scan.csv"
+            write_tfim_dynamics_scan_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "dynamics,n,J,h,backend,step,time,step_size,energy,energy_per_site,expval_x0,expval_z0z1,max_bond_dim,svd_cutoff",
+        )
+        self.assertGreaterEqual(len(lines), 3)
+
+    def test_real_time_scan_rows_have_expected_structure(self):
+        rows = real_time_tfim_scan_rows(
+            qubit_counts=(4,),
+            J_values=(1.0,),
+            h_values=(0.5,),
+            include_exact=True,
+            mps_bond_dims=(4,),
+            dt=0.05,
+            steps=2,
+            svd_cutoff=1e-12,
+        )
+        self.assertEqual(
+            set(rows[0]),
+            {
+                "dynamics",
+                "n",
+                "J",
+                "h",
+                "backend",
+                "step",
+                "time",
+                "step_size",
+                "energy",
+                "energy_per_site",
+                "expval_x0",
+                "expval_z0z1",
+                "max_bond_dim",
+                "svd_cutoff",
+            },
+        )
+        self.assertEqual({row["backend"] for row in rows}, {"qml", "mps"})
+        self.assertEqual({row["dynamics"] for row in rows}, {"real"})
+
+    def test_real_time_scan_csv_has_expected_header(self):
+        rows = real_time_tfim_scan_rows(
+            qubit_counts=(4,),
+            J_values=(1.0,),
+            h_values=(0.5,),
+            include_exact=True,
+            mps_bond_dims=(4,),
+            dt=0.05,
+            steps=2,
+            svd_cutoff=1e-12,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "real_tfim_scan.csv"
+            write_tfim_dynamics_scan_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "dynamics,n,J,h,backend,step,time,step_size,energy,energy_per_site,expval_x0,expval_z0z1,max_bond_dim,svd_cutoff",
+        )
+        self.assertGreaterEqual(len(lines), 3)
+
+    @unittest.skipIf(matplotlib is None, "matplotlib is not installed")
+    def test_real_time_report_generates_plot_files(self):
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_base = pathlib.Path(__file__).resolve().parents[1]
+            script_path = repo_base / "examples" / "real_time_tfim_report.py"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{str(ROOT)}:" + env.get("PYTHONPATH", "")
+            subprocess.run([sys.executable, str(script_path)], cwd=tempdir, env=env, check=True)
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_report.csv").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_energy_vs_time.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_energy_vs_time.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_observables_vs_time.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_observables_vs_time.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_exact_vs_mps.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_exact_vs_mps.pdf").exists())
+
+    @unittest.skipIf(matplotlib is None, "matplotlib is not installed")
+    def test_real_time_report_from_scan_csv_with_multiple_bonds(self):
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_base = pathlib.Path(__file__).resolve().parents[1]
+            scan_script = repo_base / "examples" / "real_time_tfim_scan.py"
+            report_script = repo_base / "examples" / "real_time_tfim_report.py"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{str(ROOT)}:" + env.get("PYTHONPATH", "")
+
+            scan_csv = pathlib.Path(tempdir) / "real_tfim_scan.csv"
+            subprocess.run(
+                [sys.executable, str(scan_script), "--csv", str(scan_csv), "--mps-bonds", "4,8"],
+                cwd=tempdir,
+                env=env,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(report_script),
+                    "--scan-csv",
+                    str(scan_csv),
+                    "--csv",
+                    str(pathlib.Path(tempdir) / "real_tfim_report.csv"),
+                    "--output-dir",
+                    str(pathlib.Path(tempdir)),
+                ],
+                cwd=tempdir,
+                env=env,
+                check=True,
+            )
+
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_exact_vs_mps.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "real_tfim_exact_vs_mps.pdf").exists())
 
 
 if __name__ == "__main__":
