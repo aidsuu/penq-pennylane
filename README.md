@@ -1,6 +1,6 @@
-# Penq
+# penq
 
-`Penq` is a PennyLane research package with two analytic backends: exact statevector and MPS. It targets deterministic TFIM workflows, exact-vs-MPS comparisons, and outputs that are ready for analysis.
+`penq` is a PennyLane research package with two analytic backends: exact statevector and MPS. It targets deterministic TFIM workflows, exact-vs-MPS comparisons, and outputs that are ready for analysis.
 
 The current public release is `1.2.0`. Public plugin names are stable, so code built around `qml.device(...)` does not need changes when switching backends.
 
@@ -8,10 +8,10 @@ The repository includes a broad workflow set (1D, 2D square, and 3D cubic; stati
 
 ## What it is
 
-`Penq` exposes two PennyLane devices:
+`penq` exposes two PennyLane devices:
 
-- `Penq.qml_starter`: exact full-statevector backend
-- `Penq.mps_starter`: MPS backend for bond-dimension and truncation studies
+- `penq.qml_starter`: exact full-statevector backend
+- `penq.mps_starter`: MPS backend for bond-dimension and truncation studies
 
 Both are analytic-only (`shots=None`/`0`) and are used for deterministic workflows with reproducible table/plot outputs.
 
@@ -21,13 +21,13 @@ Both are analytic-only (`shots=None`/`0`) and are used for deterministic workflo
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install Penq-pennylane
+python -m pip install penq-pennylane
 ```
 
 Optional plotting support for report scripts:
 
 ```bash
-python -m pip install "Penq-pennylane[plots]"
+python -m pip install "penq-pennylane[plots]"
 ```
 
 For local development from this repository:
@@ -39,8 +39,8 @@ python -m pip install -e .[plots] --no-build-isolation
 
 ## Device names
 
-- `Penq.qml_starter`
-- `Penq.mps_starter`
+- `penq.qml_starter`
+- `penq.mps_starter`
 
 Both have been validated through PennyLane plugin discovery in a clean environment.
 
@@ -50,10 +50,10 @@ Both have been validated through PennyLane plugin discovery in a clean environme
 import pennylane as qml
 
 # Exact backend
-exact_dev = qml.device("Penq.qml_starter", wires=2)
+exact_dev = qml.device("penq.qml_starter", wires=2)
 
 # MPS backend
-mps_dev = qml.device("Penq.mps_starter", wires=2)
+mps_dev = qml.device("penq.mps_starter", wires=2)
 
 @qml.qnode(exact_dev)
 def exact_circuit(theta):
@@ -87,7 +87,7 @@ The current public package includes:
 
 Practical backend difference:
 
-- Exact backend (`Penq.qml_starter`): full-precision numerical reference, best for baselines and validation.
-- MPS backend (`Penq.mps_starter`): useful for scaling/truncation studies (`max_bond_dim`, `svd_cutoff`); can match exact behavior with enough bond dimension, and becomes approximate under truncation.
+- Exact backend (`penq.qml_starter`): full-precision numerical reference, best for baselines and validation.
+- MPS backend (`penq.mps_starter`): useful for scaling/truncation studies (`max_bond_dim`, `svd_cutoff`); can match exact behavior with enough bond dimension, and becomes approximate under truncation.
 
 A common workflow is to start with exact as a baseline, then compare against MPS to quantify cost-error trade-offs.
