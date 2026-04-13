@@ -25,6 +25,10 @@ import math
 import numpy as np
 import pennylane as qml
 
+from .lattice_geometry_utils import square_horizontal_pairs
+from .lattice_geometry_utils import square_site_count
+from .lattice_geometry_utils import square_vertical_pairs
+
 
 EXACT_BACKEND_NAMES = {"qml", "exact", "statevector", "penq.qml_starter"}
 MPS_BACKEND_NAMES = {"mps", "penq.mps_starter"}
@@ -694,4 +698,605 @@ def compare_real_time_exact_vs_mps(
         "abs_energy_error": float(abs(mps_result["energy"] - exact_result["energy"])),
         "abs_energy_error_per_site": float(abs(mps_result["energy"] - exact_result["energy"]) / n),
         "max_abs_energy_error_over_time": float(max(energy_diffs) if energy_diffs else 0.0),
+    }
+
+
+def _square_tfim_mapped_ansatz(Lx, Ly, Jx, Jy, h, seed):
+    """Apply one deterministic mapped-lattice ansatz layer for 2D TFIM studies.
+
+    This is a fixed, non-optimized variational proxy circuit. It is not a
+    certified exact ground-state solver.
+    """
+    n_sites = square_site_count(Lx, Ly)
+    horizontal_pairs = square_horizontal_pairs(Lx, Ly)
+    vertical_pairs = square_vertical_pairs(Lx, Ly)
+
+    for wire in range(n_sites):
+        qml.Hadamard(wires=wire)
+
+    seed = int(seed)
+    rng = np.random.default_rng(seed)
+    jitter = float(rng.uniform(-0.02, 0.02))
+    gamma_x = float(0.35 * Jx + 0.1 * jitter)
+    gamma_y = float(0.35 * Jy - 0.1 * jitter)
+    beta = float(0.35 * h + 0.05 * jitter)
+
+    _apply_square_variational_layer(n_sites, horizontal_pairs, vertical_pairs, gamma_x, gamma_y, beta)
+
+
+def _apply_square_variational_layer(n_sites, horizontal_pairs, vertical_pairs, gamma_x, gamma_y, beta):
+    for wire_a, wire_b in horizontal_pairs:
+        qml.CNOT(wires=[wire_a, wire_b])
+        qml.RZ(2.0 * gamma_x, wires=wire_b)
+        qml.CNOT(wires=[wire_a, wire_b])
+
+    for wire_a, wire_b in vertical_pairs:
+        qml.CNOT(wires=[wire_a, wire_b])
+        qml.RZ(2.0 * gamma_y, wires=wire_b)
+        qml.CNOT(wires=[wire_a, wire_b])
+
+    for wire in range(n_sites):
+        qml.RX(2.0 * beta, wires=wire)
+
+
+def _apply_square_variational_ansatz(n_sites, horizontal_pairs, vertical_pairs, layer_params):
+    for wire in range(n_sites):
+        qml.Hadamard(wires=wire)
+
+    for gamma_x, gamma_y, beta in layer_params:
+        _apply_square_variational_layer(n_sites, horizontal_pairs, vertical_pairs, gamma_x, gamma_y, beta)
+
+
+def _square_deterministic_initial_params(Jx, Jy, h, max_layers, seed):
+    seed = int(seed)
+    rng = np.random.default_rng(seed)
+    params = []
+    for _ in range(max_layers):
+        jitter_x = float(rng.uniform(-0.02, 0.02))
+        jitter_y = float(rng.uniform(-0.02, 0.02))
+        jitter_b = float(rng.uniform(-0.02, 0.02))
+        params.append(
+            (
+                float(0.35 * Jx + 0.1 * jitter_x),
+                float(0.35 * Jy + 0.1 * jitter_y),
+                float(0.35 * h + 0.05 * jitter_b),
+            )
+        )
+    return params
+
+
+def _square_tfim_hamiltonian(Lx, Ly, Jx, Jy, h):
+    n_sites = square_site_count(Lx, Ly)
+    horizontal_pairs = square_horizontal_pairs(Lx, Ly)
+    vertical_pairs = square_vertical_pairs(Lx, Ly)
+
+    coeffs = []
+    ops = []
+    for wire_a, wire_b in horizontal_pairs:
+        coeffs.append(float(-Jx))
+        ops.append(qml.PauliZ(wire_a) @ qml.PauliZ(wire_b))
+    for wire_a, wire_b in vertical_pairs:
+        coeffs.append(float(-Jy))
+        ops.append(qml.PauliZ(wire_a) @ qml.PauliZ(wire_b))
+    for wire in range(n_sites):
+        coeffs.append(float(-h))
+        ops.append(qml.PauliX(wire))
+    return qml.dot(coeffs, ops)
+
+
+def _square_observable_values(dev, Lx, Ly, Jx, Jy, h, layer_params):
+    n_sites = square_site_count(Lx, Ly)
+    horizontal_pairs = square_horizontal_pairs(Lx, Ly)
+    vertical_pairs = square_vertical_pairs(Lx, Ly)
+    hamiltonian = _square_tfim_hamiltonian(Lx, Ly, Jx, Jy, h)
+
+    @qml.qnode(dev)
+    def energy_circuit():
+        _apply_square_variational_ansatz(n_sites, horizontal_pairs, vertical_pairs, layer_params)
+        return qml.expval(hamiltonian)
+
+    @qml.qnode(dev)
+    def magnetization_x_circuit():
+        _apply_square_variational_ansatz(n_sites, horizontal_pairs, vertical_pairs, layer_params)
+        return [qml.expval(qml.PauliX(wire)) for wire in range(n_sites)]
+
+    @qml.qnode(dev)
+    def magnetization_z_circuit():
+        _apply_square_variational_ansatz(n_sites, horizontal_pairs, vertical_pairs, layer_params)
+        return [qml.expval(qml.PauliZ(wire)) for wire in range(n_sites)]
+
+    @qml.qnode(dev)
+    def horizontal_zz_circuit():
+        _apply_square_variational_ansatz(n_sites, horizontal_pairs, vertical_pairs, layer_params)
+        return [qml.expval(qml.PauliZ(wire_a) @ qml.PauliZ(wire_b)) for wire_a, wire_b in horizontal_pairs]
+
+    @qml.qnode(dev)
+    def vertical_zz_circuit():
+        _apply_square_variational_ansatz(n_sites, horizontal_pairs, vertical_pairs, layer_params)
+        return [qml.expval(qml.PauliZ(wire_a) @ qml.PauliZ(wire_b)) for wire_a, wire_b in vertical_pairs]
+
+    energy = float(energy_circuit())
+    mx_values = np.asarray(magnetization_x_circuit(), dtype=float)
+    mz_values = np.asarray(magnetization_z_circuit(), dtype=float)
+    hzz_values = np.asarray(horizontal_zz_circuit(), dtype=float) if horizontal_pairs else np.asarray([0.0])
+    vzz_values = np.asarray(vertical_zz_circuit(), dtype=float) if vertical_pairs else np.asarray([0.0])
+    return {
+        "energy": float(energy),
+        "magnetization_x": float(np.mean(mx_values)),
+        "magnetization_z": float(np.mean(mz_values)),
+        "nn_zz_horizontal": float(np.mean(hzz_values)),
+        "nn_zz_vertical": float(np.mean(vzz_values)),
+    }
+
+
+def square_tfim_observables(
+    Lx,
+    Ly,
+    Jx,
+    Jy,
+    h,
+    backend="mps",
+    max_bond_dim=None,
+    svd_cutoff=0.0,
+    seed=0,
+):
+    """Evaluate mapped-lattice 2D square TFIM observables on exact or MPS backends.
+
+    Target model on open boundaries:
+    ``H_2D = -Jx sum_<i,j>_x Z_i Z_j - Jy sum_<i,j>_y Z_i Z_j - h sum_i X_i``
+
+    Lattice-to-wire mapping is row-major:
+    ``s(x, y) = x + Lx * y``.
+
+    Current implementation uses one deterministic fixed ansatz layer; this is a
+    proxy low-energy workflow, not a guaranteed exact ground-state computation.
+    """
+    if Lx < 1 or Ly < 1:
+        raise ValueError("square_tfim_observables expects Lx >= 1 and Ly >= 1.")
+    n_sites = square_site_count(Lx, Ly)
+    if n_sites < 2:
+        raise ValueError("square_tfim_observables expects at least two lattice sites.")
+
+    horizontal_pairs = square_horizontal_pairs(Lx, Ly)
+    vertical_pairs = square_vertical_pairs(Lx, Ly)
+    layer_params = _square_deterministic_initial_params(Jx, Jy, h, max_layers=1, seed=seed)
+
+    dev, backend_label = _make_device(n_sites, backend, max_bond_dim=max_bond_dim, svd_cutoff=svd_cutoff)
+    obs = _square_observable_values(dev, Lx, Ly, Jx, Jy, h, layer_params)
+
+    return {
+        "Lx": int(Lx),
+        "Ly": int(Ly),
+        "n_sites": int(n_sites),
+        "Jx": float(Jx),
+        "Jy": float(Jy),
+        "h": float(h),
+        "backend": backend_label,
+        "energy": float(obs["energy"]),
+        "energy_per_site": float(obs["energy"] / n_sites),
+        "magnetization_x": float(obs["magnetization_x"]),
+        "magnetization_z": float(obs["magnetization_z"]),
+        "nn_zz_horizontal": float(obs["nn_zz_horizontal"]),
+        "nn_zz_vertical": float(obs["nn_zz_vertical"]),
+        "max_bond_dim": None if backend_label == "qml" else max_bond_dim,
+        "svd_cutoff": float(svd_cutoff),
+    }
+
+
+def compare_square_tfim_exact_vs_mps(
+    Lx,
+    Ly,
+    Jx,
+    Jy,
+    h,
+    max_bond_dim=8,
+    svd_cutoff=1e-12,
+    seed=0,
+):
+    """Compare mapped-lattice square TFIM observables between exact and MPS backends."""
+    exact = square_tfim_observables(
+        Lx=Lx,
+        Ly=Ly,
+        Jx=Jx,
+        Jy=Jy,
+        h=h,
+        backend="qml",
+        seed=seed,
+    )
+    mps = square_tfim_observables(
+        Lx=Lx,
+        Ly=Ly,
+        Jx=Jx,
+        Jy=Jy,
+        h=h,
+        backend="mps",
+        max_bond_dim=max_bond_dim,
+        svd_cutoff=svd_cutoff,
+        seed=seed,
+    )
+    return {
+        "Lx": int(Lx),
+        "Ly": int(Ly),
+        "n_sites": int(exact["n_sites"]),
+        "Jx": float(Jx),
+        "Jy": float(Jy),
+        "h": float(h),
+        "exact_energy": float(exact["energy"]),
+        "mps_energy": float(mps["energy"]),
+        "abs_energy_error": float(abs(mps["energy"] - exact["energy"])),
+        "abs_energy_error_per_site": float(abs(mps["energy"] - exact["energy"]) / exact["n_sites"]),
+        "exact_magnetization_x": float(exact["magnetization_x"]),
+        "mps_magnetization_x": float(mps["magnetization_x"]),
+        "abs_magnetization_x_error": float(abs(mps["magnetization_x"] - exact["magnetization_x"])),
+        "exact": exact,
+        "mps": mps,
+    }
+
+
+def _square_tfim_real_time_step(n_sites, horizontal_pairs, vertical_pairs, Jx, Jy, h, dt):
+    gamma_x = float(-Jx * dt)
+    gamma_y = float(-Jy * dt)
+    beta = float(-h * dt)
+    _apply_square_variational_layer(n_sites, horizontal_pairs, vertical_pairs, gamma_x, gamma_y, beta)
+
+
+def _square_tfim_real_time_observables(dev, Lx, Ly, Jx, Jy, h, dt, step):
+    n_sites = square_site_count(Lx, Ly)
+    horizontal_pairs = square_horizontal_pairs(Lx, Ly)
+    vertical_pairs = square_vertical_pairs(Lx, Ly)
+    hamiltonian = _square_tfim_hamiltonian(Lx, Ly, Jx, Jy, h)
+
+    @qml.qnode(dev)
+    def energy_circuit():
+        for wire in range(n_sites):
+            qml.Hadamard(wires=wire)
+        for _ in range(step):
+            _square_tfim_real_time_step(n_sites, horizontal_pairs, vertical_pairs, Jx, Jy, h, dt)
+        return qml.expval(hamiltonian)
+
+    @qml.qnode(dev)
+    def magnetization_x_circuit():
+        for wire in range(n_sites):
+            qml.Hadamard(wires=wire)
+        for _ in range(step):
+            _square_tfim_real_time_step(n_sites, horizontal_pairs, vertical_pairs, Jx, Jy, h, dt)
+        return [qml.expval(qml.PauliX(wire)) for wire in range(n_sites)]
+
+    @qml.qnode(dev)
+    def magnetization_z_circuit():
+        for wire in range(n_sites):
+            qml.Hadamard(wires=wire)
+        for _ in range(step):
+            _square_tfim_real_time_step(n_sites, horizontal_pairs, vertical_pairs, Jx, Jy, h, dt)
+        return [qml.expval(qml.PauliZ(wire)) for wire in range(n_sites)]
+
+    @qml.qnode(dev)
+    def horizontal_zz_circuit():
+        for wire in range(n_sites):
+            qml.Hadamard(wires=wire)
+        for _ in range(step):
+            _square_tfim_real_time_step(n_sites, horizontal_pairs, vertical_pairs, Jx, Jy, h, dt)
+        return [qml.expval(qml.PauliZ(wire_a) @ qml.PauliZ(wire_b)) for wire_a, wire_b in horizontal_pairs]
+
+    @qml.qnode(dev)
+    def vertical_zz_circuit():
+        for wire in range(n_sites):
+            qml.Hadamard(wires=wire)
+        for _ in range(step):
+            _square_tfim_real_time_step(n_sites, horizontal_pairs, vertical_pairs, Jx, Jy, h, dt)
+        return [qml.expval(qml.PauliZ(wire_a) @ qml.PauliZ(wire_b)) for wire_a, wire_b in vertical_pairs]
+
+    energy = float(energy_circuit())
+    mx_values = np.asarray(magnetization_x_circuit(), dtype=float)
+    mz_values = np.asarray(magnetization_z_circuit(), dtype=float)
+    hzz_values = np.asarray(horizontal_zz_circuit(), dtype=float) if horizontal_pairs else np.asarray([0.0])
+    vzz_values = np.asarray(vertical_zz_circuit(), dtype=float) if vertical_pairs else np.asarray([0.0])
+    return {
+        "energy": float(energy),
+        "magnetization_x": float(np.mean(mx_values)),
+        "magnetization_z": float(np.mean(mz_values)),
+        "nn_zz_horizontal": float(np.mean(hzz_values)),
+        "nn_zz_vertical": float(np.mean(vzz_values)),
+    }
+
+
+def square_tfim_real_time(
+    Lx,
+    Ly,
+    Jx,
+    Jy,
+    h,
+    backend="mps",
+    dt=0.05,
+    steps=20,
+    max_bond_dim=None,
+    svd_cutoff=0.0,
+    seed=0,
+):
+    """Real-time mapped-lattice 2D TFIM dynamics with first-order Trotter updates.
+
+    Continuous target is ``|psi(t)> = exp(-i H_2D t)|psi0>``.
+    Current implementation is a deterministic mapped-lattice Trotterized path.
+    """
+    if Lx < 1 or Ly < 1:
+        raise ValueError("square_tfim_real_time expects Lx >= 1 and Ly >= 1.")
+    n_sites = square_site_count(Lx, Ly)
+    if n_sites < 2:
+        raise ValueError("square_tfim_real_time expects at least two lattice sites.")
+    if steps < 1:
+        raise ValueError("steps must be at least one.")
+    if dt <= 0.0:
+        raise ValueError("dt must be strictly positive.")
+
+    dev, backend_label = _make_device(n_sites, backend, max_bond_dim=max_bond_dim, svd_cutoff=svd_cutoff)
+
+    time_history = []
+    energy_history = []
+    magnetization_x_history = []
+    magnetization_z_history = []
+    nn_zz_horizontal_history = []
+    nn_zz_vertical_history = []
+
+    for step in range(steps + 1):
+        obs = _square_tfim_real_time_observables(dev, Lx, Ly, Jx, Jy, h, dt, step)
+        time_history.append(float(step * dt))
+        energy_history.append(float(obs["energy"]))
+        magnetization_x_history.append(float(obs["magnetization_x"]))
+        magnetization_z_history.append(float(obs["magnetization_z"]))
+        nn_zz_horizontal_history.append(float(obs["nn_zz_horizontal"]))
+        nn_zz_vertical_history.append(float(obs["nn_zz_vertical"]))
+
+    return {
+        "Lx": int(Lx),
+        "Ly": int(Ly),
+        "n_sites": int(n_sites),
+        "Jx": float(Jx),
+        "Jy": float(Jy),
+        "h": float(h),
+        "backend": backend_label,
+        "dt": float(dt),
+        "steps": int(steps),
+        "time_history": time_history,
+        "energy_history": energy_history,
+        "magnetization_x_history": magnetization_x_history,
+        "magnetization_z_history": magnetization_z_history,
+        "nn_zz_horizontal_history": nn_zz_horizontal_history,
+        "nn_zz_vertical_history": nn_zz_vertical_history,
+        "max_bond_dim": None if backend_label == "qml" else max_bond_dim,
+        "svd_cutoff": float(svd_cutoff),
+        "seed": int(seed),
+    }
+
+
+def _square_tfim_imag_gradient(dev, Lx, Ly, Jx, Jy, h, params):
+    shift = math.pi / 4.0
+    grad = []
+    for layer_idx in range(len(params)):
+        grad_layer = []
+        for param_idx in range(3):
+            plus_params = list(params)
+            minus_params = list(params)
+            p_plus = list(plus_params[layer_idx])
+            p_minus = list(minus_params[layer_idx])
+            p_plus[param_idx] += shift
+            p_minus[param_idx] -= shift
+            plus_params[layer_idx] = tuple(p_plus)
+            minus_params[layer_idx] = tuple(p_minus)
+            energy_plus = _square_observable_values(dev, Lx, Ly, Jx, Jy, h, plus_params)["energy"]
+            energy_minus = _square_observable_values(dev, Lx, Ly, Jx, Jy, h, minus_params)["energy"]
+            grad_layer.append(float(0.5 * (energy_plus - energy_minus)))
+        grad.append(tuple(grad_layer))
+    return grad
+
+
+def square_tfim_imag_time(
+    Lx,
+    Ly,
+    Jx,
+    Jy,
+    h,
+    backend="mps",
+    delta_tau=0.05,
+    steps=20,
+    max_layers=4,
+    max_bond_dim=None,
+    svd_cutoff=0.0,
+    seed=0,
+):
+    """Imaginary-time style mapped-lattice 2D TFIM updates via variational proxy.
+
+    This is a projected/variational approximation with identity-metric style
+    gradient updates. It is not a full non-unitary exact propagator.
+    """
+    if Lx < 1 or Ly < 1:
+        raise ValueError("square_tfim_imag_time expects Lx >= 1 and Ly >= 1.")
+    n_sites = square_site_count(Lx, Ly)
+    if n_sites < 2:
+        raise ValueError("square_tfim_imag_time expects at least two lattice sites.")
+    if steps < 1:
+        raise ValueError("steps must be at least one.")
+    if max_layers < 1:
+        raise ValueError("max_layers must be at least one.")
+    if delta_tau <= 0.0:
+        raise ValueError("delta_tau must be strictly positive.")
+
+    dev, backend_label = _make_device(n_sites, backend, max_bond_dim=max_bond_dim, svd_cutoff=svd_cutoff)
+    params = _square_deterministic_initial_params(Jx, Jy, h, max_layers=max_layers, seed=seed)
+
+    energy_history = []
+    magnetization_x_history = []
+    magnetization_z_history = []
+    nn_zz_horizontal_history = []
+    nn_zz_vertical_history = []
+
+    current = _square_observable_values(dev, Lx, Ly, Jx, Jy, h, params)
+    energy_history.append(float(current["energy"]))
+    magnetization_x_history.append(float(current["magnetization_x"]))
+    magnetization_z_history.append(float(current["magnetization_z"]))
+    nn_zz_horizontal_history.append(float(current["nn_zz_horizontal"]))
+    nn_zz_vertical_history.append(float(current["nn_zz_vertical"]))
+
+    converged = False
+    final_delta_energy = 0.0
+    tol = 1e-8
+
+    for _ in range(steps):
+        grad = _square_tfim_imag_gradient(dev, Lx, Ly, Jx, Jy, h, params)
+        candidate_params = []
+        for (gx, gy, b), (dgx, dgy, db) in zip(params, grad):
+            candidate_params.append(
+                (
+                    float(gx - delta_tau * dgx),
+                    float(gy - delta_tau * dgy),
+                    float(b - delta_tau * db),
+                )
+            )
+
+        candidate = _square_observable_values(dev, Lx, Ly, Jx, Jy, h, candidate_params)
+        delta = float(current["energy"] - candidate["energy"])
+        final_delta_energy = float(delta)
+        params = candidate_params
+        current = candidate
+
+        energy_history.append(float(current["energy"]))
+        magnetization_x_history.append(float(current["magnetization_x"]))
+        magnetization_z_history.append(float(current["magnetization_z"]))
+        nn_zz_horizontal_history.append(float(current["nn_zz_horizontal"]))
+        nn_zz_vertical_history.append(float(current["nn_zz_vertical"]))
+
+        if delta >= 0.0 and abs(delta) <= tol:
+            converged = True
+            break
+
+    return {
+        "Lx": int(Lx),
+        "Ly": int(Ly),
+        "n_sites": int(n_sites),
+        "Jx": float(Jx),
+        "Jy": float(Jy),
+        "h": float(h),
+        "backend": backend_label,
+        "delta_tau": float(delta_tau),
+        "steps": int(steps),
+        "energy_history": energy_history,
+        "magnetization_x_history": magnetization_x_history,
+        "magnetization_z_history": magnetization_z_history,
+        "nn_zz_horizontal_history": nn_zz_horizontal_history,
+        "nn_zz_vertical_history": nn_zz_vertical_history,
+        "converged": bool(converged),
+        "final_delta_energy": float(final_delta_energy),
+        "max_bond_dim": None if backend_label == "qml" else max_bond_dim,
+        "svd_cutoff": float(svd_cutoff),
+        "seed": int(seed),
+    }
+
+
+def compare_square_tfim_real_time_exact_vs_mps(
+    Lx,
+    Ly,
+    Jx,
+    Jy,
+    h,
+    dt=0.05,
+    steps=20,
+    max_bond_dim=8,
+    svd_cutoff=1e-12,
+    seed=0,
+):
+    """Compare mapped-lattice square TFIM real-time dynamics between exact and MPS."""
+    exact = square_tfim_real_time(
+        Lx=Lx,
+        Ly=Ly,
+        Jx=Jx,
+        Jy=Jy,
+        h=h,
+        backend="qml",
+        dt=dt,
+        steps=steps,
+        seed=seed,
+    )
+    mps = square_tfim_real_time(
+        Lx=Lx,
+        Ly=Ly,
+        Jx=Jx,
+        Jy=Jy,
+        h=h,
+        backend="mps",
+        dt=dt,
+        steps=steps,
+        max_bond_dim=max_bond_dim,
+        svd_cutoff=svd_cutoff,
+        seed=seed,
+    )
+
+    diffs = [abs(me - ee) for ee, me in zip(exact["energy_history"], mps["energy_history"])]
+    return {
+        "Lx": int(Lx),
+        "Ly": int(Ly),
+        "n_sites": int(exact["n_sites"]),
+        "Jx": float(Jx),
+        "Jy": float(Jy),
+        "h": float(h),
+        "exact": exact,
+        "mps": mps,
+        "abs_energy_error": float(abs(mps["energy_history"][-1] - exact["energy_history"][-1])),
+        "abs_energy_error_per_site": float(abs(mps["energy_history"][-1] - exact["energy_history"][-1]) / exact["n_sites"]),
+        "max_abs_energy_error_over_time": float(max(diffs) if diffs else 0.0),
+    }
+
+
+def compare_square_tfim_imag_time_exact_vs_mps(
+    Lx,
+    Ly,
+    Jx,
+    Jy,
+    h,
+    delta_tau=0.05,
+    steps=20,
+    max_layers=4,
+    max_bond_dim=8,
+    svd_cutoff=1e-12,
+    seed=0,
+):
+    """Compare mapped-lattice square TFIM imaginary-time proxy updates between exact and MPS."""
+    exact = square_tfim_imag_time(
+        Lx=Lx,
+        Ly=Ly,
+        Jx=Jx,
+        Jy=Jy,
+        h=h,
+        backend="qml",
+        delta_tau=delta_tau,
+        steps=steps,
+        max_layers=max_layers,
+        seed=seed,
+    )
+    mps = square_tfim_imag_time(
+        Lx=Lx,
+        Ly=Ly,
+        Jx=Jx,
+        Jy=Jy,
+        h=h,
+        backend="mps",
+        delta_tau=delta_tau,
+        steps=steps,
+        max_layers=max_layers,
+        max_bond_dim=max_bond_dim,
+        svd_cutoff=svd_cutoff,
+        seed=seed,
+    )
+    return {
+        "Lx": int(Lx),
+        "Ly": int(Ly),
+        "n_sites": int(exact["n_sites"]),
+        "Jx": float(Jx),
+        "Jy": float(Jy),
+        "h": float(h),
+        "exact": exact,
+        "mps": mps,
+        "abs_energy_error": float(abs(mps["energy_history"][-1] - exact["energy_history"][-1])),
+        "abs_energy_error_per_site": float(abs(mps["energy_history"][-1] - exact["energy_history"][-1]) / exact["n_sites"]),
+        "abs_magnetization_x_error": float(
+            abs(mps["magnetization_x_history"][-1] - exact["magnetization_x_history"][-1])
+        ),
     }
