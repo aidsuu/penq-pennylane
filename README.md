@@ -1,17 +1,21 @@
 # PenQ Dual-Backend Research Pack
 
-`penq` is a deterministic PennyLane research pack built around two public backends:
+`penq` is a PennyLane research pack with dual exact and MPS backends for deterministic quantum lattice workflows, including 1D, 2D, and 3D TFIM studies, exact-vs-MPS comparisons, and CSV/PNG/PDF reporting pipelines.
+
+Public devices:
 - `penq.qml_starter`
 - `penq.mps_starter`
 
 ## Project Status
 
-Public release: `1.1.0`
+Public release: `1.2.0`
 
-The current public package release keeps the public plugin names stable while the internal runtime milestone for this work is `v8.1`:
-- a stable analytic statevector backend with the public device name `penq.qml_starter`
+The current public package release keeps the public plugin names stable and includes:
+- an exact analytic backend with the public device name `penq.qml_starter`
 - an analytic MPS backend with the public device name `penq.mps_starter`
-- a compact set of deterministic research workflows, scans, comparisons, and CSV-producing analysis helpers
+- deterministic 1D, 2D, and 3D TFIM workflows (static and dynamics)
+- adaptive TFIM VQE, imaginary-time and real-time TFIM studies
+- exact-vs-MPS comparison workflows with CSV-ready scans and PNG/PDF scientific report pipelines
 
 ## Research Pack Status
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "penq-pennylane"
 version = "1.2.0"
-description = "Small PennyLane backend for PenQ research workflows"
+description = "penq is a PennyLane research pack with dual exact and MPS backends for deterministic quantum lattice workflows, including 1D, 2D, and 3D TFIM studies, exact-vs-MPS comparisons, and CSV/PNG/PDF reporting pipelines."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["PennyLane>=0.0.0"]
