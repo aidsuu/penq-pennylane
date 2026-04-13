@@ -2,6 +2,41 @@
 
 ## 1.1.0
 
+### v11.0-c
+
+- Added cubic-lattice 3D geometry helpers with explicit mapped-wire ordering:
+	- `cubic_site_count(Lx, Ly, Lz)`
+	- `cubic_site_index(x, y, z, Lx, Ly, Lz)`
+	- `cubic_x_pairs(Lx, Ly, Lz)`
+	- `cubic_y_pairs(Lx, Ly, Lz)`
+	- `cubic_z_pairs(Lx, Ly, Lz)`
+- Added 3D cubic TFIM static APIs:
+	- `cubic_tfim_observables(...)`
+	- `compare_cubic_tfim_exact_vs_mps(...)`
+- Added 3D cubic TFIM dynamics APIs:
+	- `cubic_tfim_real_time(...)`
+	- `cubic_tfim_imag_time(...)`
+	- `compare_cubic_tfim_real_time_exact_vs_mps(...)`
+	- `compare_cubic_tfim_imag_time_exact_vs_mps(...)`
+- Added cubic workflows:
+	- `examples/cubic_tfim_demo.py`
+	- `examples/cubic_tfim_scan.py`
+	- `examples/cubic_tfim_report.py`
+	- `examples/cubic_tfim_real_time.py`
+	- `examples/cubic_tfim_imag_time.py`
+	- `examples/cubic_tfim_dynamics_report.py`
+- Added stable cubic CSV schemas for static, real-time, and imaginary-time workflows.
+- Added mandatory report artifact outputs:
+	- `cubic_tfim_energy_vs_field.[png|pdf]`
+	- `cubic_tfim_magnetization_vs_field.[png|pdf]`
+	- `cubic_tfim_exact_vs_mps.[png|pdf]`
+	- `cubic_tfim_real_time_energy_vs_time.[png|pdf]`
+	- `cubic_tfim_real_time_observables_vs_time.[png|pdf]`
+	- `cubic_tfim_imag_time_energy_vs_step.[png|pdf]`
+	- `cubic_tfim_imag_time_exact_vs_mps.[png|pdf]`
+- Added tests for cubic geometry helpers, static and dynamics result shapes, exact-vs-MPS small-case checks, cubic CSV headers, and mandatory PNG/PDF report outputs.
+- Documented approximation scope explicitly: real-time uses mapped-lattice first-order Trotterized updates and imaginary-time uses projected/variational approximate updates.
+
 ### v11.0-b
 
 - Added square-lattice 2D TFIM dynamics APIs:

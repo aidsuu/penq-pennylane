@@ -472,5 +472,245 @@ class TestSquareTFIMDynamics(unittest.TestCase):
         self.assertLessEqual(imag_comp["abs_energy_error_per_site"], 1e-8)
 
 
+class TestCubicGeometryAndTFIM(unittest.TestCase):
+    def test_cubic_geometry_helpers(self):
+        from QML.PenQ import cubic_site_count
+        from QML.PenQ import cubic_site_index
+        from QML.PenQ import cubic_x_pairs
+        from QML.PenQ import cubic_y_pairs
+        from QML.PenQ import cubic_z_pairs
+
+        self.assertEqual(cubic_site_count(2, 2, 2), 8)
+        self.assertEqual(cubic_site_index(0, 0, 0, 2, 2, 2), 0)
+        self.assertEqual(cubic_site_index(1, 1, 1, 2, 2, 2), 7)
+        self.assertEqual(cubic_x_pairs(2, 2, 2), [(0, 1), (2, 3), (4, 5), (6, 7)])
+        self.assertEqual(cubic_y_pairs(2, 2, 2), [(0, 2), (1, 3), (4, 6), (5, 7)])
+        self.assertEqual(cubic_z_pairs(2, 2, 2), [(0, 4), (1, 5), (2, 6), (3, 7)])
+
+    def test_cubic_tfim_observables_result_shape(self):
+        from QML.PenQ.penq_algorithms import cubic_tfim_observables
+
+        result = cubic_tfim_observables(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.5,
+            backend="qml",
+            seed=0,
+        )
+        self.assertEqual(
+            set(result),
+            {
+                "Lx",
+                "Ly",
+                "Lz",
+                "n_sites",
+                "Jx",
+                "Jy",
+                "Jz",
+                "h",
+                "backend",
+                "energy",
+                "energy_per_site",
+                "magnetization_x",
+                "magnetization_z",
+                "nn_zz_x",
+                "nn_zz_y",
+                "nn_zz_z",
+                "max_bond_dim",
+                "svd_cutoff",
+            },
+        )
+        self.assertEqual(result["n_sites"], 8)
+
+    def test_cubic_exact_vs_mps_small_case(self):
+        from QML.PenQ.penq_algorithms import compare_cubic_tfim_exact_vs_mps
+
+        comparison_2x2x2 = compare_cubic_tfim_exact_vs_mps(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            max_bond_dim=16,
+            svd_cutoff=1e-12,
+            seed=1,
+        )
+        self.assertLessEqual(comparison_2x2x2["abs_energy_error_per_site"], 1e-8)
+
+
+class TestCubicTFIMDynamics(unittest.TestCase):
+    def test_cubic_real_time_result_shape(self):
+        from QML.PenQ.penq_algorithms import cubic_tfim_real_time
+
+        result = cubic_tfim_real_time(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            backend="qml",
+            dt=0.05,
+            steps=4,
+            seed=2,
+        )
+        self.assertEqual(
+            set(result),
+            {
+                "Lx",
+                "Ly",
+                "Lz",
+                "n_sites",
+                "Jx",
+                "Jy",
+                "Jz",
+                "h",
+                "backend",
+                "dt",
+                "steps",
+                "time_history",
+                "energy_history",
+                "magnetization_x_history",
+                "magnetization_z_history",
+                "nn_zz_x_history",
+                "nn_zz_y_history",
+                "nn_zz_z_history",
+                "max_bond_dim",
+                "svd_cutoff",
+                "seed",
+            },
+        )
+        self.assertEqual(len(result["time_history"]), 5)
+        self.assertEqual(len(result["energy_history"]), 5)
+
+    def test_cubic_imag_time_result_shape(self):
+        from QML.PenQ.penq_algorithms import cubic_tfim_imag_time
+
+        result = cubic_tfim_imag_time(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            backend="qml",
+            delta_tau=0.05,
+            steps=4,
+            max_layers=2,
+            seed=2,
+        )
+        self.assertEqual(
+            set(result),
+            {
+                "Lx",
+                "Ly",
+                "Lz",
+                "n_sites",
+                "Jx",
+                "Jy",
+                "Jz",
+                "h",
+                "backend",
+                "delta_tau",
+                "steps",
+                "energy_history",
+                "magnetization_x_history",
+                "magnetization_z_history",
+                "nn_zz_x_history",
+                "nn_zz_y_history",
+                "nn_zz_z_history",
+                "converged",
+                "final_delta_energy",
+                "max_bond_dim",
+                "svd_cutoff",
+                "seed",
+            },
+        )
+        self.assertGreaterEqual(len(result["energy_history"]), 2)
+
+    def test_cubic_real_imag_histories_are_finite_and_stable(self):
+        from QML.PenQ.penq_algorithms import cubic_tfim_imag_time
+        from QML.PenQ.penq_algorithms import cubic_tfim_real_time
+
+        real_result = cubic_tfim_real_time(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            backend="qml",
+            dt=0.05,
+            steps=4,
+            seed=2,
+        )
+        self.assertEqual(real_result["time_history"], sorted(real_result["time_history"]))
+        for value in real_result["energy_history"]:
+            self.assertTrue(abs(value) < 1e6)
+
+        imag_result = cubic_tfim_imag_time(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            backend="qml",
+            delta_tau=0.05,
+            steps=4,
+            max_layers=2,
+            seed=2,
+        )
+        for value in imag_result["energy_history"]:
+            self.assertTrue(abs(value) < 1e6)
+
+    def test_cubic_real_and_imag_exact_vs_mps_small_case(self):
+        from QML.PenQ.penq_algorithms import compare_cubic_tfim_imag_time_exact_vs_mps
+        from QML.PenQ.penq_algorithms import compare_cubic_tfim_real_time_exact_vs_mps
+
+        real_comp = compare_cubic_tfim_real_time_exact_vs_mps(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            dt=0.05,
+            steps=4,
+            max_bond_dim=16,
+            svd_cutoff=1e-12,
+            seed=3,
+        )
+        self.assertLessEqual(real_comp["abs_energy_error_per_site"], 1e-8)
+
+        imag_comp = compare_cubic_tfim_imag_time_exact_vs_mps(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            delta_tau=0.05,
+            steps=4,
+            max_layers=2,
+            max_bond_dim=16,
+            svd_cutoff=1e-12,
+            seed=3,
+        )
+        self.assertLessEqual(imag_comp["abs_energy_error_per_site"], 1e-8)
+
+
 if __name__ == "__main__":
     unittest.main()

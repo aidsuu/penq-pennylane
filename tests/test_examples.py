@@ -76,6 +76,12 @@ try:
     from QML.PenQ.examples.square_tfim_imag_time import square_tfim_imag_time_rows
     from QML.PenQ.examples.square_tfim_dynamics_utils import write_square_tfim_real_time_csv
     from QML.PenQ.examples.square_tfim_dynamics_utils import write_square_tfim_imag_time_csv
+    from QML.PenQ.examples.cubic_tfim_scan import cubic_tfim_scan_rows
+    from QML.PenQ.examples.cubic_tfim_scan import write_cubic_tfim_scan_csv
+    from QML.PenQ.examples.cubic_tfim_real_time import cubic_tfim_real_time_rows
+    from QML.PenQ.examples.cubic_tfim_imag_time import cubic_tfim_imag_time_rows
+    from QML.PenQ.examples.cubic_tfim_dynamics_utils import write_cubic_tfim_real_time_csv
+    from QML.PenQ.examples.cubic_tfim_dynamics_utils import write_cubic_tfim_imag_time_csv
     from QML.PenQ.examples.mps_tebd_tfim_quench import mps_tebd_tfim_rows
     from QML.PenQ.examples.mps_tebd_tfim_quench import write_mps_tebd_tfim_csv
     from QML.PenQ.examples.mps_trotter_order_study import mps_trotter_order_rows
@@ -168,6 +174,12 @@ except ImportError:  # pragma: no cover - dependency is external to this repo
     square_tfim_imag_time_rows = None
     write_square_tfim_real_time_csv = None
     write_square_tfim_imag_time_csv = None
+    cubic_tfim_scan_rows = None
+    write_cubic_tfim_scan_csv = None
+    cubic_tfim_real_time_rows = None
+    cubic_tfim_imag_time_rows = None
+    write_cubic_tfim_real_time_csv = None
+    write_cubic_tfim_imag_time_csv = None
     mps_tebd_tfim_rows = None
     write_mps_tebd_tfim_csv = None
     mps_trotter_order_rows = None
@@ -1999,6 +2011,160 @@ class TestExamples(unittest.TestCase):
             self.assertTrue((pathlib.Path(tempdir) / "square_tfim_imag_time_energy_vs_step.pdf").exists())
             self.assertTrue((pathlib.Path(tempdir) / "square_tfim_imag_time_exact_vs_mps.png").exists())
             self.assertTrue((pathlib.Path(tempdir) / "square_tfim_imag_time_exact_vs_mps.pdf").exists())
+
+    def test_cubic_tfim_scan_csv_has_expected_header(self):
+        rows = cubic_tfim_scan_rows(
+            lattice_sizes=((2, 2, 2),),
+            Jx_values=(1.0,),
+            Jy_values=(0.8,),
+            Jz_values=(0.7,),
+            h_values=(0.4,),
+            include_exact=True,
+            mps_bond_dims=(8,),
+            svd_cutoff=1e-12,
+            seed=0,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "cubic_tfim_scan.csv"
+            write_cubic_tfim_scan_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "Lx,Ly,Lz,n_sites,Jx,Jy,Jz,h,backend,energy,energy_per_site,magnetization_x,magnetization_z,nn_zz_x,nn_zz_y,nn_zz_z,max_bond_dim,svd_cutoff",
+        )
+        self.assertGreaterEqual(len(lines), 3)
+
+    @unittest.skipIf(matplotlib is None, "matplotlib is not installed")
+    def test_cubic_tfim_report_generates_plot_files(self):
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_base = pathlib.Path(__file__).resolve().parents[1]
+            scan_script = repo_base / "examples" / "cubic_tfim_scan.py"
+            report_script = repo_base / "examples" / "cubic_tfim_report.py"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{str(ROOT)}:" + env.get("PYTHONPATH", "")
+
+            scan_csv = pathlib.Path(tempdir) / "cubic_tfim_scan.csv"
+            subprocess.run(
+                [sys.executable, str(scan_script), "--csv", str(scan_csv), "--h-grid", "0.3,0.7"],
+                cwd=tempdir,
+                env=env,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(report_script),
+                    "--scan-csv",
+                    str(scan_csv),
+                    "--output-dir",
+                    str(pathlib.Path(tempdir)),
+                ],
+                cwd=tempdir,
+                env=env,
+                check=True,
+            )
+
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_energy_vs_field.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_energy_vs_field.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_magnetization_vs_field.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_magnetization_vs_field.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_exact_vs_mps.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_exact_vs_mps.pdf").exists())
+
+    def test_cubic_tfim_real_time_csv_has_expected_header(self):
+        rows = cubic_tfim_real_time_rows(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            dt=0.05,
+            steps=2,
+            max_bond_dim=8,
+            svd_cutoff=1e-12,
+            seed=0,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "cubic_tfim_real_time.csv"
+            write_cubic_tfim_real_time_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "Lx,Ly,Lz,n_sites,Jx,Jy,Jz,h,backend,step,time,energy,magnetization_x,magnetization_z,nn_zz_x,nn_zz_y,nn_zz_z,max_bond_dim,svd_cutoff",
+        )
+        self.assertGreaterEqual(len(lines), 3)
+
+    def test_cubic_tfim_imag_time_csv_has_expected_header(self):
+        rows = cubic_tfim_imag_time_rows(
+            Lx=2,
+            Ly=2,
+            Lz=2,
+            Jx=1.0,
+            Jy=0.8,
+            Jz=0.7,
+            h=0.6,
+            delta_tau=0.05,
+            steps=2,
+            max_layers=2,
+            max_bond_dim=8,
+            svd_cutoff=1e-12,
+            seed=0,
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = pathlib.Path(tempdir) / "cubic_tfim_imag_time.csv"
+            write_cubic_tfim_imag_time_csv(path, rows)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            lines[0],
+            "Lx,Ly,Lz,n_sites,Jx,Jy,Jz,h,backend,step,delta_tau,energy,magnetization_x,magnetization_z,nn_zz_x,nn_zz_y,nn_zz_z,max_bond_dim,svd_cutoff",
+        )
+        self.assertGreaterEqual(len(lines), 3)
+
+    @unittest.skipIf(matplotlib is None, "matplotlib is not installed")
+    def test_cubic_tfim_dynamics_report_generates_plot_files(self):
+        import os
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            repo_base = pathlib.Path(__file__).resolve().parents[1]
+            real_script = repo_base / "examples" / "cubic_tfim_real_time.py"
+            imag_script = repo_base / "examples" / "cubic_tfim_imag_time.py"
+            report_script = repo_base / "examples" / "cubic_tfim_dynamics_report.py"
+            env = os.environ.copy()
+            env["PYTHONPATH"] = f"{str(ROOT)}:" + env.get("PYTHONPATH", "")
+
+            real_csv = pathlib.Path(tempdir) / "cubic_tfim_real_time.csv"
+            imag_csv = pathlib.Path(tempdir) / "cubic_tfim_imag_time.csv"
+            subprocess.run([sys.executable, str(real_script), "--csv", str(real_csv), "--steps", "4"], cwd=tempdir, env=env, check=True)
+            subprocess.run([sys.executable, str(imag_script), "--csv", str(imag_csv), "--steps", "4", "--max-layers", "2"], cwd=tempdir, env=env, check=True)
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(report_script),
+                    "--real-csv",
+                    str(real_csv),
+                    "--imag-csv",
+                    str(imag_csv),
+                    "--output-dir",
+                    str(pathlib.Path(tempdir)),
+                ],
+                cwd=tempdir,
+                env=env,
+                check=True,
+            )
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_real_time_energy_vs_time.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_real_time_energy_vs_time.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_real_time_observables_vs_time.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_real_time_observables_vs_time.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_imag_time_energy_vs_step.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_imag_time_energy_vs_step.pdf").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_imag_time_exact_vs_mps.png").exists())
+            self.assertTrue((pathlib.Path(tempdir) / "cubic_tfim_imag_time_exact_vs_mps.pdf").exists())
 
 
 if __name__ == "__main__":

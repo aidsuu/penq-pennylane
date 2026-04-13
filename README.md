@@ -520,6 +520,62 @@ Mandatory dynamics report outputs always include PNG and PDF for each stem:
 - `square_tfim_imag_time_energy_vs_step`
 - `square_tfim_imag_time_exact_vs_mps`
 
+## 3D Cubic TFIM Pack
+
+Added in `v11.0-c`, PenQ now includes a cubic-lattice TFIM family for small-lattice exact baselines and mapped-lattice MPS approximations.
+
+Target open-boundary Hamiltonian:
+
+- `H_3D = -Jx sum_<i,j>_x Z_i Z_j - Jy sum_<i,j>_y Z_i Z_j - Jz sum_<i,j>_z Z_i Z_j - h sum_i X_i`
+
+Lattice mapping used in the implementation is row-major by plane:
+
+- `s(x,y,z) = x + Lx*y + Lx*Ly*z`
+
+This mapping defines the wire order for both exact and MPS workflows.
+
+Current scope is deterministic low-energy proxy evaluation with fixed mapped-lattice ansatz layers, returning:
+
+- `energy`
+- `energy_per_site`
+- `magnetization_x`
+- `magnetization_z`
+- `nn_zz_x`
+- `nn_zz_y`
+- `nn_zz_z`
+
+The cubic-lattice APIs do not claim certified exact ground-state optimization. They are intended for consistent comparative studies, including exact-vs-MPS small-lattice checks.
+
+## 3D Cubic TFIM Dynamics
+
+Added in `v11.0-c`, the cubic-lattice family now includes real-time and imaginary-time trajectory workflows.
+
+- Real-time API:
+  - `cubic_tfim_real_time(Lx, Ly, Lz, Jx, Jy, Jz, h, ...)`
+  - target dynamics follows `|psi(t)> = exp(-i H_3D t)|psi0>`
+  - current implementation uses mapped-lattice first-order Trotterized updates
+- Imaginary-time API:
+  - `cubic_tfim_imag_time(Lx, Ly, Lz, Jx, Jy, Jz, h, ...)`
+  - current implementation uses projected/variational approximate updates (not a full exact non-unitary propagator)
+
+Both paths support exact baseline (`penq.qml_starter`) and mapped-lattice MPS approximation (`penq.mps_starter`) with shared open-boundary 3D Hamiltonian and row-major-by-plane wire mapping.
+
+Trajectory CSV workflows:
+
+- `examples/cubic_tfim_real_time.py`
+- `examples/cubic_tfim_imag_time.py`
+
+Dynamics report workflow:
+
+- `examples/cubic_tfim_dynamics_report.py`
+
+Mandatory dynamics report outputs always include PNG and PDF for each stem:
+
+- `cubic_tfim_real_time_energy_vs_time`
+- `cubic_tfim_real_time_observables_vs_time`
+- `cubic_tfim_imag_time_energy_vs_step`
+- `cubic_tfim_imag_time_exact_vs_mps`
+
 ## Scientific Plotting and Reports
 
 The repository now includes a report layer for the adaptive TFIM VQE workflows.
@@ -587,6 +643,12 @@ SciencePlots is optional and never required for importing runtime devices or sol
 | `examples/square_tfim_real_time.py` | Exact-vs-MPS comparative | 2D square-lattice TFIM real-time trajectory writer with stable CSV schema | Terminal + CSV |
 | `examples/square_tfim_imag_time.py` | Exact-vs-MPS comparative | 2D square-lattice TFIM imaginary-time trajectory writer with stable CSV schema | Terminal + CSV |
 | `examples/square_tfim_dynamics_report.py` | Exact-vs-MPS comparative | 2D square-lattice TFIM dynamics report with mandatory PNG/PDF artifact pairs | Terminal + PNG/PDF |
+| `examples/cubic_tfim_demo.py` | Exact-vs-MPS comparative | Deterministic 3D cubic-lattice TFIM demo with mapped-wire exact and MPS observables | Terminal |
+| `examples/cubic_tfim_scan.py` | Exact-vs-MPS comparative | 3D cubic-lattice TFIM parameter scan writing a stable observables CSV schema | Terminal + CSV |
+| `examples/cubic_tfim_report.py` | Exact-vs-MPS comparative | Scientific report for cubic-lattice TFIM scans with mandatory PNG/PDF outputs | Terminal + PNG/PDF |
+| `examples/cubic_tfim_real_time.py` | Exact-vs-MPS comparative | 3D cubic-lattice TFIM real-time trajectory writer with stable CSV schema | Terminal + CSV |
+| `examples/cubic_tfim_imag_time.py` | Exact-vs-MPS comparative | 3D cubic-lattice TFIM imaginary-time trajectory writer with stable CSV schema | Terminal + CSV |
+| `examples/cubic_tfim_dynamics_report.py` | Exact-vs-MPS comparative | 3D cubic-lattice TFIM dynamics report with mandatory PNG/PDF artifact pairs | Terminal + PNG/PDF |
 | `examples/tfim_research_campaign.py` | Exact-only | TFIM campaign runner that writes multiple CSV analysis artifacts in one directory | Terminal + multiple CSV |
 | `examples/tfim_campaign_summary.py` | Exact-only | Summary reader for campaign outputs with optional aggregated CSV | Terminal + CSV |
 | `examples/tfim_large_scale_campaign.py` | Exact-only | Larger-system deterministic TFIM campaign for batch full-statevector scans | Terminal + CSV |
