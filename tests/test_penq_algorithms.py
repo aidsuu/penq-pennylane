@@ -246,5 +246,231 @@ class TestRealTimeTFIM(unittest.TestCase):
         self.assertLessEqual(comparison["max_abs_energy_error_over_time"], 1e-8)
 
 
+class TestSquareGeometryAndTFIM(unittest.TestCase):
+    def test_square_geometry_helpers(self):
+        from QML.PenQ import square_horizontal_pairs
+        from QML.PenQ import square_site_count
+        from QML.PenQ import square_site_index
+        from QML.PenQ import square_vertical_pairs
+
+        self.assertEqual(square_site_count(3, 2), 6)
+        self.assertEqual(square_site_index(3, 0, 0), 0)
+        self.assertEqual(square_site_index(3, 2, 1), 5)
+        self.assertEqual(square_horizontal_pairs(3, 2), [(0, 1), (1, 2), (3, 4), (4, 5)])
+        self.assertEqual(square_vertical_pairs(3, 2), [(0, 3), (1, 4), (2, 5)])
+
+    def test_square_tfim_observables_result_shape(self):
+        from QML.PenQ.penq_algorithms import square_tfim_observables
+
+        result = square_tfim_observables(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.5,
+            backend="qml",
+            seed=0,
+        )
+        self.assertEqual(
+            set(result),
+            {
+                "Lx",
+                "Ly",
+                "n_sites",
+                "Jx",
+                "Jy",
+                "h",
+                "backend",
+                "energy",
+                "energy_per_site",
+                "magnetization_x",
+                "magnetization_z",
+                "nn_zz_horizontal",
+                "nn_zz_vertical",
+                "max_bond_dim",
+                "svd_cutoff",
+            },
+        )
+        self.assertEqual(result["n_sites"], 4)
+
+    def test_square_exact_vs_mps_small_case(self):
+        from QML.PenQ.penq_algorithms import compare_square_tfim_exact_vs_mps
+
+        comparison_2x2 = compare_square_tfim_exact_vs_mps(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            max_bond_dim=8,
+            svd_cutoff=1e-12,
+            seed=1,
+        )
+        self.assertLessEqual(comparison_2x2["abs_energy_error"], 1e-8)
+        self.assertLessEqual(comparison_2x2["abs_energy_error_per_site"], 1e-8)
+
+        comparison_3x2 = compare_square_tfim_exact_vs_mps(
+            Lx=3,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            max_bond_dim=16,
+            svd_cutoff=1e-12,
+            seed=1,
+        )
+        self.assertLessEqual(comparison_3x2["abs_energy_error_per_site"], 1e-6)
+
+
+class TestSquareTFIMDynamics(unittest.TestCase):
+    def test_square_real_time_result_shape(self):
+        from QML.PenQ.penq_algorithms import square_tfim_real_time
+
+        result = square_tfim_real_time(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            backend="qml",
+            dt=0.05,
+            steps=4,
+            seed=2,
+        )
+        self.assertEqual(
+            set(result),
+            {
+                "Lx",
+                "Ly",
+                "n_sites",
+                "Jx",
+                "Jy",
+                "h",
+                "backend",
+                "dt",
+                "steps",
+                "time_history",
+                "energy_history",
+                "magnetization_x_history",
+                "magnetization_z_history",
+                "nn_zz_horizontal_history",
+                "nn_zz_vertical_history",
+                "max_bond_dim",
+                "svd_cutoff",
+                "seed",
+            },
+        )
+        self.assertEqual(len(result["time_history"]), 5)
+        self.assertEqual(len(result["energy_history"]), 5)
+
+    def test_square_imag_time_result_shape(self):
+        from QML.PenQ.penq_algorithms import square_tfim_imag_time
+
+        result = square_tfim_imag_time(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            backend="qml",
+            delta_tau=0.05,
+            steps=4,
+            max_layers=2,
+            seed=2,
+        )
+        self.assertEqual(
+            set(result),
+            {
+                "Lx",
+                "Ly",
+                "n_sites",
+                "Jx",
+                "Jy",
+                "h",
+                "backend",
+                "delta_tau",
+                "steps",
+                "energy_history",
+                "magnetization_x_history",
+                "magnetization_z_history",
+                "nn_zz_horizontal_history",
+                "nn_zz_vertical_history",
+                "converged",
+                "final_delta_energy",
+                "max_bond_dim",
+                "svd_cutoff",
+                "seed",
+            },
+        )
+        self.assertGreaterEqual(len(result["energy_history"]), 2)
+
+    def test_square_real_imag_histories_are_finite_and_stable(self):
+        from QML.PenQ.penq_algorithms import square_tfim_imag_time
+        from QML.PenQ.penq_algorithms import square_tfim_real_time
+
+        real_result = square_tfim_real_time(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            backend="qml",
+            dt=0.05,
+            steps=6,
+            seed=2,
+        )
+        self.assertEqual(real_result["time_history"], sorted(real_result["time_history"]))
+        for value in real_result["energy_history"]:
+            self.assertTrue(abs(value) < 1e6)
+
+        imag_result = square_tfim_imag_time(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            backend="qml",
+            delta_tau=0.05,
+            steps=6,
+            max_layers=3,
+            seed=2,
+        )
+        for value in imag_result["energy_history"]:
+            self.assertTrue(abs(value) < 1e6)
+
+    def test_square_real_and_imag_exact_vs_mps_small_case(self):
+        from QML.PenQ.penq_algorithms import compare_square_tfim_imag_time_exact_vs_mps
+        from QML.PenQ.penq_algorithms import compare_square_tfim_real_time_exact_vs_mps
+
+        real_comp = compare_square_tfim_real_time_exact_vs_mps(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            dt=0.05,
+            steps=6,
+            max_bond_dim=8,
+            svd_cutoff=1e-12,
+            seed=3,
+        )
+        self.assertLessEqual(real_comp["abs_energy_error_per_site"], 1e-8)
+
+        imag_comp = compare_square_tfim_imag_time_exact_vs_mps(
+            Lx=2,
+            Ly=2,
+            Jx=1.0,
+            Jy=0.8,
+            h=0.6,
+            delta_tau=0.05,
+            steps=6,
+            max_layers=3,
+            max_bond_dim=8,
+            svd_cutoff=1e-12,
+            seed=3,
+        )
+        self.assertLessEqual(imag_comp["abs_energy_error_per_site"], 1e-8)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,39 @@
 
 ## 1.1.0
 
+### v11.0-b
+
+- Added square-lattice 2D TFIM dynamics APIs:
+	- `square_tfim_real_time(...)`
+	- `square_tfim_imag_time(...)`
+	- `compare_square_tfim_real_time_exact_vs_mps(...)`
+	- `compare_square_tfim_imag_time_exact_vs_mps(...)`
+- Added trajectory workflows:
+	- `examples/square_tfim_real_time.py`
+	- `examples/square_tfim_imag_time.py`
+	- `examples/square_tfim_dynamics_report.py`
+- Added stable CSV schemas for square real-time and imaginary-time trajectories.
+- Added mandatory report artifact outputs:
+	- `square_tfim_real_time_energy_vs_time.[png|pdf]`
+	- `square_tfim_real_time_observables_vs_time.[png|pdf]`
+	- `square_tfim_imag_time_energy_vs_step.[png|pdf]`
+	- `square_tfim_imag_time_exact_vs_mps.[png|pdf]`
+- Added tests for square dynamics result shapes, finite/stable trajectory histories, exact-vs-MPS small-case checks, dynamics CSV schemas, and mandatory PNG/PDF report outputs.
+- Documented approximation scope explicitly: real-time uses a mapped-lattice first-order Trotterized path and imaginary-time uses projected/variational approximate updates.
+
+### v11.0-a
+
+- Added a 2D square-lattice TFIM mapped-wire pack with row-major mapping `s(x,y)=x+Lx*y` and open-boundary horizontal/vertical nearest-neighbor pair helpers.
+- Added `square_tfim_observables(...)` for deterministic mapped-lattice observable evaluation on `penq.qml_starter` and `penq.mps_starter`.
+- Added `compare_square_tfim_exact_vs_mps(...)` for small-lattice exact-vs-MPS validation (`2x2`, `3x2`).
+- Added `examples/square_tfim_demo.py`, `examples/square_tfim_scan.py`, and `examples/square_tfim_report.py`.
+- Added stable square TFIM scan CSV schema and mandatory report artifact outputs:
+	- `square_tfim_energy_vs_field.[png|pdf]`
+	- `square_tfim_magnetization_vs_field.[png|pdf]`
+	- `square_tfim_exact_vs_mps.[png|pdf]`
+- Added tests for geometry helper correctness, square TFIM result shape, exact-vs-MPS checks, scan CSV schema, and mandatory report PNG/PDF generation.
+- Documented scope explicitly: current square-lattice method is a deterministic fixed ansatz proxy workflow, not a certified exact ground-state solver.
+
 ### v10.0
 
 - Added deterministic real-time TFIM solver `real_time_tfim(...)` and exact-vs-MPS comparator `compare_real_time_exact_vs_mps(...)`.
