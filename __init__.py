@@ -1,4 +1,4 @@
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from .qml_starter_device import QMLStarterDevice
 from .qml_mps_device import QMLMPSDevice
