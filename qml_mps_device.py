@@ -30,13 +30,19 @@ class QMLMPSDevice(QubitDevice):
         "RZ",
         "CNOT",
         "CZ",
-        "PauliRot",
         "IsingZZ",
         "IsingXX",
         "IsingYY",
     }
-    observables = {"PauliX", "PauliY", "PauliZ"}
+    observables = {"Identity", "PauliX", "PauliY", "PauliZ", "Hadamard", "Prod"}
     _MAX_WIRES = 30
+
+    @classmethod
+    def capabilities(cls):
+        return {
+            "model": "qubit",
+            "supports_tensor_observables": False,
+        }
 
     def __init__(self, wires, shots=None, analytic=None, max_bond_dim=None, svd_cutoff=0.0):
         if isinstance(wires, int):
@@ -47,33 +53,40 @@ class QMLMPSDevice(QubitDevice):
         if not 1 <= num_wires <= self._MAX_WIRES:
             raise ValueError(f"QMLMPSDevice supports between 1 and {self._MAX_WIRES} wires.")
 
-        if shots not in (None, 0):
-            raise ValueError(
-                "QMLMPSDevice supports analytic execution only; shots must be None or 0."
-            )
+        if shots is not None and int(shots) < 1:
+            raise ValueError("QMLMPSDevice shots must be None or a positive integer.")
+
+        normalized_shots = None if shots in (None, 0) else int(shots)
         if max_bond_dim is not None and int(max_bond_dim) < 1:
             raise ValueError("QMLMPSDevice max_bond_dim must be None or a positive integer.")
         if float(svd_cutoff) < 0.0:
             raise ValueError("QMLMPSDevice svd_cutoff must be non-negative.")
 
-        super().__init__(wires=wires, shots=None)
+        super().__init__(wires=wires, shots=normalized_shots)
         self.max_bond_dim = None if max_bond_dim is None else int(max_bond_dim)
         self.svd_cutoff = float(svd_cutoff)
         self._mps = None
+        self._pre_rotated_mps = None
         self.reset()
 
     def reset(self):
         self._mps = self._initialize_zero_mps()
+        self._pre_rotated_mps = [tensor.copy() for tensor in self._mps]
 
     @property
     def state(self):
-        return self._mps_to_statevector().copy()
+        target = self._pre_rotated_mps if self._pre_rotated_mps is not None else self._mps
+        return self._mps_to_statevector(target).copy()
 
     def apply(self, operations, rotations=None, **kwargs):
         self._mps = self._execute_single_circuit(operations)
+        self._pre_rotated_mps = [tensor.copy() for tensor in self._mps]
+        for rotation in rotations or []:
+            self._apply_operation_to_mps(self._mps, rotation)
 
     def analytic_probability(self, wires=None):
-        probabilities = np.abs(self.state) ** 2
+        # Probabilities should use the post-rotation execution state.
+        probabilities = np.abs(self._mps_to_statevector(self._mps)) ** 2
         if wires is None:
             return probabilities
         return self.marginal_prob(probabilities, wires=wires)
@@ -82,30 +95,7 @@ class QMLMPSDevice(QubitDevice):
         return [self.execute(circuit) for circuit in circuits]
 
     def execute(self, circuit, **kwargs):
-        operations = list(getattr(circuit, "operations", []))
-        measurements = list(getattr(circuit, "measurements", []))
-
-        if not measurements:
-            raise DeviceError("Unsupported measurement: at least one measurement per circuit is required.")
-
-        self._mps = self._execute_single_circuit(operations)
-        results = [self._evaluate_measurement(measurement) for measurement in measurements]
-        if len(results) == 1:
-            return results[0]
-        return tuple(results)
-
-    def _evaluate_measurement(self, measurement):
-        measurement_kind = self._measurement_kind(measurement)
-        if measurement_kind == "state":
-            return self.state
-        if measurement_kind == "expectation":
-            return self.expval(measurement.obs)
-        raise DeviceError(
-            "Unsupported measurement: only qml.state(), qml.expval(qml.PauliX(wire)), "
-            "qml.expval(qml.PauliY(wire)), qml.expval(qml.PauliZ(wire)), arbitrary Pauli-word tensor "
-            "products of PauliX, PauliY, and PauliZ on distinct wires, plus linear combinations of those "
-            "observables, are supported."
-        )
+        return super().execute(circuit, **kwargs)
 
     def expval(self, observable, shot_range=None, bin_size=None):
         if self._is_linear_combination(observable):
@@ -232,13 +222,23 @@ class QMLMPSDevice(QubitDevice):
             keep = min(keep, self.max_bond_dim)
         return max(1, keep)
 
-    def _mps_to_statevector(self):
-        tensor = self._mps[0]
-        for next_tensor in self._mps[1:]:
+    def _mps_to_statevector(self, mps=None):
+        work_mps = self._mps if mps is None else mps
+        tensor = work_mps[0]
+        for next_tensor in work_mps[1:]:
             tensor = np.tensordot(tensor, next_tensor, axes=([-1], [0]))
         return tensor.reshape(2 ** self.num_wires).astype(np.complex128, copy=False)
 
     def _expval_supported_observable(self, observable):
+        if self._observable_name(observable) == "Hadamard":
+            if len(observable.wires) != 1:
+                self._raise_unsupported_observable()
+            wire = self._wire_index(observable.wires[0])
+            mps = self._pre_rotated_mps if self._pre_rotated_mps is not None else self._mps
+            ex = self._expval_pauli_word(["PauliX"], [wire], mps)
+            ez = self._expval_pauli_word(["PauliZ"], [wire], mps)
+            return float((ex + ez) / np.sqrt(2.0))
+
         pauli_word = getattr(observable, "_penq_pauli_word", None)
         if pauli_word is None:
             pauli_word = self._supported_pauli_word(observable)
@@ -247,12 +247,13 @@ class QMLMPSDevice(QubitDevice):
             except Exception:
                 pass
         pauli_names, wires = pauli_word
-        return self._expval_pauli_word(pauli_names, wires)
+        mps = self._pre_rotated_mps if self._pre_rotated_mps is not None else self._mps
+        return self._expval_pauli_word(pauli_names, wires, mps)
 
-    def _expval_pauli_word(self, pauli_names, wires):
+    def _expval_pauli_word(self, pauli_names, wires, mps):
         wire_to_name = {wire: pauli_name for pauli_name, wire in zip(pauli_names, wires)}
         env = np.ones((1, 1), dtype=np.complex128)
-        for wire, tensor in enumerate(self._mps):
+        for wire, tensor in enumerate(mps):
             matrix = self._single_qubit_observable_matrix(wire_to_name.get(wire, "Identity"))
             env = np.einsum("lL,lsr,st,LtR->rR", env, np.conjugate(tensor), matrix, tensor)
         value = np.real_if_close(env[0, 0]).item()
@@ -300,6 +301,12 @@ class QMLMPSDevice(QubitDevice):
                 ],
                 dtype=np.complex128,
             )
+
+        # Allow internal basis-change rotations used by PennyLane measurement processing.
+        matrix = np.asarray(qml.matrix(operation), dtype=np.complex128)
+        if matrix.shape == (2, 2):
+            return matrix
+
         raise DeviceError(
             f"Unsupported operation: {name}. Supported gates are PauliX, PauliY, PauliZ, Hadamard, RX, RY, RZ, CNOT, CZ, PauliRot with up to two non-identity local factors, and IsingZZ/IsingXX/IsingYY."
         )
@@ -465,6 +472,8 @@ class QMLMPSDevice(QubitDevice):
 
         for factor in factors:
             factor_name = self._observable_name(factor)
+            if factor_name == "Identity":
+                continue
             if factor_name not in {"PauliX", "PauliY", "PauliZ"} or len(factor.wires) != 1:
                 self._raise_unsupported_observable()
 

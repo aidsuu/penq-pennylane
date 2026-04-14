@@ -23,8 +23,15 @@ class QMLStarterDevice(QubitDevice):
     version = "1.7.0"
     author = "Aidsuu"
     operations = {"PauliX", "PauliY", "PauliZ", "Hadamard", "RX", "RY", "RZ", "CNOT"}
-    observables = {"PauliX", "PauliY", "PauliZ"}
+    observables = {"Identity", "PauliX", "PauliY", "PauliZ", "Hadamard", "Prod"}
     _MAX_WIRES = 30
+
+    @classmethod
+    def capabilities(cls):
+        return {
+            "model": "qubit",
+            "supports_tensor_observables": False,
+        }
 
     def __init__(self, wires, shots=None, analytic=None):
         if isinstance(wires, int):
@@ -35,14 +42,15 @@ class QMLStarterDevice(QubitDevice):
         if not 1 <= num_wires <= self._MAX_WIRES:
             raise ValueError(f"QMLStarterDevice supports between 1 and {self._MAX_WIRES} wires.")
 
-        if shots not in (None, 0):
-            raise ValueError(
-                "QMLStarterDevice supports analytic execution only; shots must be None or 0."
-            )
+        if shots is not None and int(shots) < 1:
+            raise ValueError("QMLStarterDevice shots must be None or a positive integer.")
 
-        super().__init__(wires=wires, shots=None)
+        normalized_shots = None if shots in (None, 0) else int(shots)
+
+        super().__init__(wires=wires, shots=normalized_shots)
         self._state = None
         self._pre_rotated_state = None
+        self._force_analytic_probability = False
         self.reset()
 
     def reset(self):
@@ -55,13 +63,20 @@ class QMLStarterDevice(QubitDevice):
 
     def apply(self, operations, rotations=None, **kwargs):
         self._state = self._execute_single_circuit(operations)
-        self._pre_rotated_state = self._state
+        self._pre_rotated_state = self._state.copy()
+        for rotation in rotations or []:
+            self._apply_operation_to_state(self._state, rotation)
 
     def analytic_probability(self, wires=None):
         probabilities = np.abs(self._state) ** 2
         if wires is None:
             return probabilities
         return self.marginal_prob(probabilities, wires=wires)
+
+    def probability(self, wires=None, shot_range=None, bin_size=None):
+        if self._force_analytic_probability and shot_range is None and bin_size is None:
+            return self.analytic_probability(wires=wires)
+        return super().probability(wires=wires, shot_range=shot_range, bin_size=bin_size)
 
     def expval(self, observable, shot_range=None, bin_size=None):
         if self._is_linear_combination(observable):
@@ -74,6 +89,15 @@ class QMLStarterDevice(QubitDevice):
         return self._expval_supported_observable(observable)
 
     def _expval_supported_observable(self, observable):
+        if self._observable_name(observable) == "Hadamard":
+            if len(observable.wires) != 1:
+                self._raise_unsupported_observable()
+            wire = self._wire_index(observable.wires[0])
+            state = self._pre_rotated_state
+            ex = self._expval_pauli_product(state, ["PauliX"], [wire])
+            ez = self._expval_pauli_product(state, ["PauliZ"], [wire])
+            return float((ex + ez) / np.sqrt(2.0))
+
         pauli_word = getattr(observable, "_penq_pauli_word", None)
         if pauli_word is None:
             pauli_word = self._supported_pauli_word(observable)
@@ -82,42 +106,19 @@ class QMLStarterDevice(QubitDevice):
             except Exception:
                 pass
         pauli_names, wire_indices = pauli_word
-        return self._expval_pauli_product(self._state, pauli_names, wire_indices)
+        return self._expval_pauli_product(self._pre_rotated_state, pauli_names, wire_indices)
 
     def batch_execute(self, circuits):
-        results = []
-        for circuit in circuits:
-            results.append(self.execute(circuit))
-        return results
+        return [self.execute(circuit) for circuit in circuits]
 
     def execute(self, circuit, **kwargs):
-        operations = list(getattr(circuit, "operations", []))
         measurements = list(getattr(circuit, "measurements", []))
-
-        if not measurements:
-            raise DeviceError("Unsupported measurement: at least one measurement per circuit is required.")
-
-        self._state = self._execute_single_circuit(operations)
-        self._pre_rotated_state = self._state
-
-        results = [self._evaluate_measurement(measurement) for measurement in measurements]
-        if len(results) == 1:
-            return results[0]
-        return tuple(results)
-
-    def _evaluate_measurement(self, measurement):
-        measurement_kind = self._measurement_kind(measurement)
-        if measurement_kind == "state":
-            return self.state
-        if measurement_kind == "expectation":
-            return self.expval(measurement.obs)
-
-        raise DeviceError(
-            "Unsupported measurement: only qml.state(), qml.expval(qml.PauliX(wire)), "
-            "qml.expval(qml.PauliY(wire)), qml.expval(qml.PauliZ(wire)), arbitrary Pauli-word tensor "
-            "products of PauliX, PauliY, and PauliZ on distinct wires, plus linear combinations of those "
-            "observables, are supported."
-        )
+        has_prob = any(self._measurement_kind(measurement) == "probability" for measurement in measurements)
+        self._force_analytic_probability = has_prob and len(measurements) > 1
+        try:
+            return super().execute(circuit, **kwargs)
+        finally:
+            self._force_analytic_probability = False
 
     def _execute_single_circuit(self, operations):
         state = self._initialize_basis_state(0)
@@ -193,6 +194,11 @@ class QMLStarterDevice(QubitDevice):
                 ],
                 dtype=np.complex128,
             )
+
+        # Allow internal basis-change rotations used by PennyLane measurement processing.
+        matrix = np.asarray(qml.matrix(operation), dtype=np.complex128)
+        if matrix.shape == (2, 2):
+            return matrix
 
         raise DeviceError(
             f"Unsupported operation: {name}. Supported gates are PauliX, PauliY, PauliZ, Hadamard, RX, RY, RZ, and CNOT."
@@ -303,6 +309,8 @@ class QMLStarterDevice(QubitDevice):
 
         for factor in factors:
             factor_name = self._observable_name(factor)
+            if factor_name == "Identity":
+                continue
             if factor_name not in {"PauliX", "PauliY", "PauliZ"} or len(factor.wires) != 1:
                 self._raise_unsupported_observable()
 
@@ -360,6 +368,8 @@ class QMLStarterDevice(QubitDevice):
             return_type_text = str(return_type).lower()
             if "state" in return_type_text:
                 return "state"
+            if "probability" in return_type_text or "probs" in return_type_text:
+                return "probability"
             if "expectation" in return_type_text or "expval" in return_type_text:
                 return "expectation"
             return return_type_text
@@ -367,6 +377,8 @@ class QMLStarterDevice(QubitDevice):
         measurement_name = measurement.__class__.__name__.lower()
         if "state" in measurement_name:
             return "state"
+        if "probability" in measurement_name or "probs" in measurement_name:
+            return "probability"
         if "expectation" in measurement_name or "expval" in measurement_name:
             return "expectation"
         return measurement_name
