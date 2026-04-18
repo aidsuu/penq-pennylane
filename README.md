@@ -91,3 +91,11 @@ Practical backend difference:
 - MPS backend (`penq.mps_starter`): useful for scaling/truncation studies (`max_bond_dim`, `svd_cutoff`); can match exact behavior with enough bond dimension, and becomes approximate under truncation.
 
 A common workflow is to start with exact as a baseline, then compare against MPS to quantify cost-error trade-offs.
+
+## Tested environment
+
+- PennyLane 0.44.1
+- penq-pennylane 1.2.0
+- Python 3.13.5
+- NumPy 2.4.4
+- SciPy 1.17.1
