@@ -2,7 +2,7 @@
 
 `penq` is a PennyLane research package with two analytic backends: exact statevector and MPS. It targets deterministic TFIM workflows, exact-vs-MPS comparisons, and outputs that are ready for analysis.
 
-The current public release is `1.2.0`. Public plugin names are stable, so code built around `qml.device(...)` does not need changes when switching backends.
+The current public release is `1.2.0`. Public plugin names are stable, so code built around PennyLane device creation does not need API changes when switching backends.
 
 The repository includes a broad workflow set (1D, 2D square, and 3D cubic; static and dynamics), while the runtime devices remain intentionally compact and strict.
 
@@ -46,28 +46,30 @@ Both have been validated through PennyLane plugin discovery in a clean environme
 
 ## Minimal PennyLane example
 
+This minimal usage snippet follows current PennyLane documentation style and uses `import pennylane as qp`.
+
 ```python
-import pennylane as qml
+import pennylane as qp
 
 # Exact backend
-exact_dev = qml.device("penq.qml_starter", wires=2)
+exact_dev = qp.device("penq.qml_starter", wires=2)
 
 # MPS backend
-mps_dev = qml.device("penq.mps_starter", wires=2)
+mps_dev = qp.device("penq.mps_starter", wires=2)
 
-@qml.qnode(exact_dev)
+@qp.qnode(exact_dev)
 def exact_circuit(theta):
-    qml.Hadamard(wires=0)
-    qml.CNOT(wires=[0, 1])
-    qml.RX(theta, wires=0)
-    return qml.expval(qml.PauliZ(0) @ qml.PauliZ(1))
+    qp.Hadamard(wires=0)
+    qp.CNOT(wires=[0, 1])
+    qp.RX(theta, wires=0)
+    return qp.expval(qp.PauliZ(0) @ qp.PauliZ(1))
 
-@qml.qnode(mps_dev)
+@qp.qnode(mps_dev)
 def mps_circuit(theta):
-    qml.Hadamard(wires=0)
-    qml.CNOT(wires=[0, 1])
-    qml.RX(theta, wires=0)
-    return qml.expval(qml.PauliZ(0) @ qml.PauliZ(1))
+    qp.Hadamard(wires=0)
+    qp.CNOT(wires=[0, 1])
+    qp.RX(theta, wires=0)
+    return qp.expval(qp.PauliZ(0) @ qp.PauliZ(1))
 
 print(exact_circuit(0.2))
 print(mps_circuit(0.2))
